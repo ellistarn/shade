@@ -1,17 +1,19 @@
 package main
 
 import (
-	"github.com/mark3labs/mcp-go/server"
+	"fmt"
+	"strings"
+
 	"github.com/spf13/cobra"
 
-	mcpserver "github.com/ellistarn/shade/internal/mcp"
 	"github.com/ellistarn/shade/internal/shade"
 )
 
-func newListenCmd() *cobra.Command {
+func newAskCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "listen",
-		Short: "Start the shade MCP server",
+		Use:   "ask [question]",
+		Short: "Ask the shade a question",
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireBucket(); err != nil {
 				return err
@@ -21,8 +23,13 @@ func newListenCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			srv := mcpserver.NewServer(s)
-			return server.ServeStdio(srv)
+			question := strings.Join(args, " ")
+			answer, err := s.Ask(ctx, question)
+			if err != nil {
+				return err
+			}
+			fmt.Println(answer)
+			return nil
 		},
 	}
 }

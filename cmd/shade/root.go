@@ -20,7 +20,8 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newUploadCmd())
 	cmd.AddCommand(newLsCmd())
 	cmd.AddCommand(newShowCmd())
-	cmd.AddCommand(newListenCmd())
+	cmd.AddCommand(newMCPCmd())
+	cmd.AddCommand(newAskCmd())
 	return cmd
 }
 
