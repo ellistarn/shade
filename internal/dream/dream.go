@@ -268,42 +268,10 @@ func reflectOnSession(ctx context.Context, client LLM, session *source.Session) 
 	return client.Converse(ctx, reflectPrompt, conversation)
 }
 
-const (
-	// maxLearnTokens is the token budget for reflections in a single learn call.
-	// Leaves room for the system prompt (~250 tokens) and output (~8K tokens)
-	// within a 200K context window.
-	maxLearnTokens = 150_000
-)
-
 func learn(ctx context.Context, client LLM, observations []string) (map[string]string, llm.Usage, error) {
 	if len(observations) == 0 {
 		return nil, llm.Usage{}, nil
 	}
-	batches := chunkObservations(observations, maxLearnTokens)
-	if len(batches) == 1 {
-		return learnBatch(ctx, client, batches[0])
-	}
-	// Multiple batches: learn from each, then merge skill maps.
-	// Later batches with the same skill name overwrite earlier ones,
-	// which is fine since skills are a complete set per topic.
-	log.Printf("Splitting %d reflections across %d batches\n", len(observations), len(batches))
-	allSkills := map[string]string{}
-	var totalUsage llm.Usage
-	for i, batch := range batches {
-		log.Printf("  Learning batch %d/%d (%d reflections)...\n", i+1, len(batches), len(batch))
-		skills, usage, err := learnBatch(ctx, client, batch)
-		if err != nil {
-			return nil, totalUsage, fmt.Errorf("learn batch %d failed: %w", i+1, err)
-		}
-		totalUsage = totalUsage.Add(usage)
-		for name, content := range skills {
-			allSkills[name] = content
-		}
-	}
-	return allSkills, totalUsage, nil
-}
-
-func learnBatch(ctx context.Context, client LLM, observations []string) (map[string]string, llm.Usage, error) {
 	input := strings.Join(observations, "\n\n---\n\n")
 	raw, usage, err := client.Converse(ctx, learnPrompt, input)
 	if err != nil {
@@ -311,27 +279,6 @@ func learnBatch(ctx context.Context, client LLM, observations []string) (map[str
 	}
 	skills, err := ParseSkillsResponse(raw)
 	return skills, usage, err
-}
-
-// chunkObservations groups observations into batches that fit within a token budget.
-func chunkObservations(observations []string, maxTokens int) [][]string {
-	var batches [][]string
-	var current []string
-	var currentTokens int
-	for _, obs := range observations {
-		tokens := estimateTokens(obs)
-		if currentTokens+tokens > maxTokens && len(current) > 0 {
-			batches = append(batches, current)
-			current = nil
-			currentTokens = 0
-		}
-		current = append(current, obs)
-		currentTokens += tokens
-	}
-	if len(current) > 0 {
-		batches = append(batches, current)
-	}
-	return batches
 }
 
 func formatSession(session *source.Session) string {
