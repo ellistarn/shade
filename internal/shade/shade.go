@@ -194,7 +194,7 @@ func (s *Shade) Upload(ctx context.Context) (*UploadResult, error) {
 		size := len(data)
 		if entry, exists := remote[key]; exists {
 			if !sess.UpdatedAt.After(entry.LastModified) {
-				log.Printf("  skip %s (%s, unchanged)\n", key, FormatBytes(size))
+				log.Printf("  skip (%s, unchanged) %s\n", FormatBytes(size), key)
 				skipped++
 				continue
 			}
@@ -203,7 +203,7 @@ func (s *Shade) Upload(ctx context.Context) (*UploadResult, error) {
 			warnings = append(warnings, fmt.Sprintf("failed to upload %s: %v", sess.SessionID, err))
 			continue
 		}
-		log.Printf("  upload %s (%s)\n", key, FormatBytes(size))
+		log.Printf("  upload (%s) %s\n", FormatBytes(size), key)
 		uploaded++
 		totalBytes += size
 	}

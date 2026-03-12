@@ -132,7 +132,7 @@ func Run(ctx context.Context, store Store, client LLM, opts Options) (*Result, e
 				if err != nil {
 					results[i] = mapResult{key: entry.Key, err: err}
 					n := completed.Add(1)
-					log.Printf("  [%d/%d] %s (error)\n", n, len(pending), entry.Key)
+					log.Printf("  [%d/%d] (error) %s\n", n, len(pending), entry.Key)
 					return
 				}
 				msgs := len(session.Messages)
@@ -140,10 +140,10 @@ func Run(ctx context.Context, store Store, client LLM, opts Options) (*Result, e
 				results[i] = mapResult{key: entry.Key, observations: obs, usage: usage, err: err}
 				n := completed.Add(1)
 				if err != nil {
-					log.Printf("  [%d/%d] %s (%d msgs) error: %v\n", n, len(pending), entry.Key, msgs, err)
+					log.Printf("  [%d/%d] (%d msgs) error: %v %s\n", n, len(pending), msgs, err, entry.Key)
 				} else {
-					log.Printf("  [%d/%d] %s (%d msgs, %d in / %d out tokens, $%.4f)\n",
-						n, len(pending), entry.Key, msgs, usage.InputTokens, usage.OutputTokens, usage.Cost())
+					log.Printf("  [%d/%d] (%d msgs, %d in / %d out tokens, $%.4f) %s\n",
+						n, len(pending), msgs, usage.InputTokens, usage.OutputTokens, usage.Cost(), entry.Key)
 				}
 			}(i, entry)
 		}
