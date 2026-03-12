@@ -63,7 +63,7 @@ func estimateTokens(s string) int {
 
 // Run executes the dream pipeline: load state, map new memories to observations,
 // reduce observations into skills, and persist the results.
-func Run(ctx context.Context, store Store, llm LLM, opts Options) (*Result, error) {
+func Run(ctx context.Context, store Store, reflectLLM, learnLLM LLM, opts Options) (*Result, error) {
 	// Load prior dream state (missing state means first run)
 	var state State
 	if opts.Reprocess {
@@ -141,7 +141,7 @@ func Run(ctx context.Context, store Store, llm LLM, opts Options) (*Result, erro
 				return
 			}
 			msgs := len(session.Messages)
-			obs, usage, err := reflect(ctx, llm, session)
+			obs, usage, err := reflect(ctx, reflectLLM, session)
 			results[i] = mapResult{key: entry.Key, observations: obs, usage: usage, err: err}
 			n := completed.Add(1)
 			if err != nil {
@@ -165,7 +165,7 @@ func Run(ctx context.Context, store Store, llm LLM, opts Options) (*Result, erro
 			continue
 		}
 		reflectUsage = reflectUsage.Add(r.usage)
-		if r.observations != "" {
+		if strings.TrimSpace(r.observations) != "" {
 			allObservations = append(allObservations, r.observations)
 		}
 		processedKeys[r.key] = time.Now()
@@ -174,7 +174,7 @@ func Run(ctx context.Context, store Store, llm LLM, opts Options) (*Result, erro
 
 	// Learn: compress observations into skills
 	log.Printf("Learning skills from %d reflections...\n", len(allObservations))
-	skills, learnUsage, err := learn(ctx, llm, allObservations)
+	skills, learnUsage, err := learn(ctx, learnLLM, allObservations)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}

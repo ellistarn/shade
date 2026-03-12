@@ -126,7 +126,7 @@ description: How to write commits.
 Keep commit messages plain text, no emojis.`,
 	}
 
-	result, err := dream.Run(context.Background(), store, llm, dream.Options{})
+	result, err := dream.Run(context.Background(), store, llm, llm, dream.Options{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestDreamPipelineNoMemories(t *testing.T) {
 	store := newMockStore()
 	llm := &mockLLM{}
 
-	result, err := dream.Run(context.Background(), store, llm, dream.Options{})
+	result, err := dream.Run(context.Background(), store, llm, llm, dream.Options{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -202,7 +202,7 @@ description: Test skill.
 Content here.`,
 	}
 
-	result, err := dream.Run(context.Background(), store, llm, dream.Options{Limit: 2})
+	result, err := dream.Run(context.Background(), store, llm, llm, dream.Options{Limit: 2})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestDreamPipelineEmptyConversation(t *testing.T) {
 
 	llm := &mockLLM{}
 
-	result, err := dream.Run(context.Background(), store, llm, dream.Options{})
+	result, err := dream.Run(context.Background(), store, llm, llm, dream.Options{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -254,14 +254,14 @@ Content.`,
 	}
 
 	// First run
-	_, err := dream.Run(context.Background(), store, llm, dream.Options{})
+	_, err := dream.Run(context.Background(), store, llm, llm, dream.Options{})
 	if err != nil {
 		t.Fatalf("first Run() error: %v", err)
 	}
 
 	// With Reprocess, it should process again even though state would normally prune it
 	llm.calls = nil
-	result, err := dream.Run(context.Background(), store, llm, dream.Options{Reprocess: true})
+	result, err := dream.Run(context.Background(), store, llm, llm, dream.Options{Reprocess: true})
 	if err != nil {
 		t.Fatalf("reprocess Run() error: %v", err)
 	}

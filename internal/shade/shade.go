@@ -45,7 +45,7 @@ func New(ctx context.Context, bucket string) (*Shade, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
-	bedrockClient, err := bedrock.NewClient(ctx)
+	bedrockClient, err := bedrock.NewClient(ctx, bedrock.ModelOpus)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bedrock client: %w", err)
 	}
@@ -108,11 +108,11 @@ func readSkillToolSpec() *types.ToolConfiguration {
 	}
 }
 
-// Ask answers a question using the shade's distilled skills.
+// Advise answers a question using the shade's distilled skills.
 // The LLM sees a catalog of skill names and descriptions, then uses tool
 // calling to fetch the full content of any skills it deems relevant.
 // This is a stateless one-shot: no session history, no persistence.
-func (s *Shade) Ask(ctx context.Context, question string) (string, error) {
+func (s *Shade) Advise(ctx context.Context, question string) (string, error) {
 	catalog, err := skill.LoadCatalog(ctx, s.s3, s.bucket)
 	if err != nil {
 		return "", fmt.Errorf("failed to load skill catalog: %w", err)

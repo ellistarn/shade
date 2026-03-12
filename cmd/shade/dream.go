@@ -25,11 +25,15 @@ func newDreamCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			llm, err := bedrock.NewClient(ctx)
+			reflectLLM, err := bedrock.NewClient(ctx, bedrock.ModelSonnet)
 			if err != nil {
 				return err
 			}
-			result, err := dream.Run(ctx, store, llm, dream.Options{Reprocess: reprocess, Limit: limit})
+			learnLLM, err := bedrock.NewClient(ctx, bedrock.ModelOpus)
+			if err != nil {
+				return err
+			}
+			result, err := dream.Run(ctx, store, reflectLLM, learnLLM, dream.Options{Reprocess: reprocess, Limit: limit})
 			if err != nil {
 				return err
 			}

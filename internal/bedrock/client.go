@@ -20,7 +20,10 @@ import (
 	"github.com/ellistarn/shade/internal/log"
 )
 
-const defaultModel = "us.anthropic.claude-opus-4-6-v1"
+const (
+	ModelOpus   = "us.anthropic.claude-opus-4-6-v1"
+	ModelSonnet = "us.anthropic.claude-sonnet-4-6-v1"
+)
 
 // Usage tracks token consumption from a Converse call.
 type Usage struct {
@@ -98,14 +101,13 @@ const (
 	requestsPerSec = 4 // target steady-state request rate
 )
 
-func NewClient(ctx context.Context) (*Client, error) {
+func NewClient(ctx context.Context, model string) (*Client, error) {
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
-	model := os.Getenv("SHADE_MODEL")
-	if model == "" {
-		model = defaultModel
+	if override := os.Getenv("SHADE_MODEL"); override != "" {
+		model = override
 	}
 	c := &Client{
 		runtime:  bedrockruntime.NewFromConfig(cfg),
@@ -282,12 +284,16 @@ func (c *Client) converseRawOnce(ctx context.Context, system string, messages []
 		InferenceConfig: &types.InferenceConfiguration{
 			MaxTokens: aws.Int32(64000),
 		},
-		AdditionalModelRequestFields: document.NewLazyDocument(map[string]any{
+	}
+	if c.supportsThinking() {
+		input.AdditionalModelRequestFields = document.NewLazyDocument(map[string]any{
 			"thinking": map[string]any{
-				"type":   "adaptive",
+				"type": "adaptive",
+			},
+			"output_config": map[string]any{
 				"effort": "medium",
 			},
-		}),
+		})
 	}
 	if toolConfig != nil {
 		input.ToolConfig = toolConfig
@@ -328,6 +334,11 @@ func (c *Client) extractUsage(out *bedrockruntime.ConverseOutput) Usage {
 	usage.inputPricePerToken = c.pricing.inputPerToken
 	usage.outputPricePerToken = c.pricing.outputPerToken
 	return usage
+}
+
+// supportsThinking returns true if the current model supports extended thinking.
+func (c *Client) supportsThinking() bool {
+	return strings.Contains(c.model, "claude-opus") || strings.Contains(c.model, "claude-sonnet")
 }
 
 // isThrottling checks whether the error is a Bedrock throttling (429) response.
