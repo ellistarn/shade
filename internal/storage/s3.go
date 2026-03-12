@@ -163,6 +163,64 @@ func (c *Client) PutSkill(ctx context.Context, name, content string) error {
 	return nil
 }
 
+// PutReflection writes a reflection to S3 under dream/reflections/{key}.md.
+func (c *Client) PutReflection(ctx context.Context, key, content string) error {
+	// Replace the memories/ prefix so reflections mirror the memory layout
+	path := fmt.Sprintf("dream/reflections/%s.md", strings.TrimPrefix(strings.TrimSuffix(key, ".json"), "memories/"))
+	contentType := "text/markdown"
+	_, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      &c.bucket,
+		Key:         &path,
+		Body:        bytes.NewReader([]byte(content)),
+		ContentType: &contentType,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to put reflection for %s: %w", key, err)
+	}
+	return nil
+}
+
+// ListReflections returns the keys of all persisted reflections under dream/reflections/.
+func (c *Client) ListReflections(ctx context.Context) (map[string]time.Time, error) {
+	reflections := map[string]time.Time{}
+	paginator := s3.NewListObjectsV2Paginator(c.s3, &s3.ListObjectsV2Input{
+		Bucket: &c.bucket,
+		Prefix: aws.String("dream/reflections/"),
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list reflections: %w", err)
+		}
+		for _, obj := range page.Contents {
+			// Convert dream/reflections/opencode/ses_abc.md back to memories/opencode/ses_abc.json
+			key := aws.ToString(obj.Key)
+			memoryKey := strings.TrimPrefix(key, "dream/reflections/")
+			memoryKey = "memories/" + strings.TrimSuffix(memoryKey, ".md") + ".json"
+			reflections[memoryKey] = aws.ToTime(obj.LastModified)
+		}
+	}
+	return reflections, nil
+}
+
+// GetReflection downloads a reflection's content from S3.
+func (c *Client) GetReflection(ctx context.Context, memoryKey string) (string, error) {
+	path := fmt.Sprintf("dream/reflections/%s.md", strings.TrimPrefix(strings.TrimSuffix(memoryKey, ".json"), "memories/"))
+	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &c.bucket,
+		Key:    &path,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to get reflection for %s: %w", memoryKey, err)
+	}
+	defer out.Body.Close()
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read reflection for %s: %w", memoryKey, err)
+	}
+	return string(data), nil
+}
+
 // DeletePrefix removes all objects under a given S3 prefix.
 func (c *Client) DeletePrefix(ctx context.Context, prefix string) error {
 	paginator := s3.NewListObjectsV2Paginator(c.s3, &s3.ListObjectsV2Input{

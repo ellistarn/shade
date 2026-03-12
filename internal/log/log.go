@@ -6,10 +6,10 @@ import (
 )
 
 func Printf(format string, args ...any) {
-	fmt.Printf(time.Now().Format("15:04:05")+" "+format, args...)
+	fmt.Printf("["+time.Now().Format("15:04:05")+"] "+format, args...)
 }
 
 func Println(args ...any) {
-	fmt.Print(time.Now().Format("15:04:05") + " ")
+	fmt.Print("[" + time.Now().Format("15:04:05") + "] ")
 	fmt.Println(args...)
 }

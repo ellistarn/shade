@@ -9,10 +9,17 @@ them into skills, and serves those skills to any agent that asks.
 etc.) and syncs them to storage. Your shade learns from these memories by dreaming.
 
 **Dream** reads your uploaded memories, focusing on the feedback you give to models: where they get
-things wrong, what you correct, what you reinforce. It compresses these patterns into skills that
-capture your expertise. Skills are guidance, not information: they teach models how you want things
-done without leaking underlying data. Dreaming is lossy by design, keeping what matters and
-forgetting what doesn't.
+things wrong, what you correct, what you reinforce. It reflects on each memory individually, then
+compresses the reflections into skills that capture your expertise. Skills are guidance, not
+information: they teach models how you want things done without leaking underlying data. Dreaming is
+lossy by design, keeping what matters and forgetting what doesn't.
+
+Reflections are persisted so you can re-synthesize skills later with better models or prompts without
+re-processing all your memories.
+
+**Relearn** re-runs the skill synthesis step using your persisted reflections. Use this when you want
+to take advantage of a smarter model or improved learning prompts without the cost of re-reflecting
+on every memory.
 
 **Listen** starts an MCP server that exposes a single tool: **ask**. An agent sends a question and
 gets back guidance shaped by your skills. Each call is stateless, a one-shot interaction with no
@@ -37,6 +44,7 @@ export SHADE_MODEL=claude-sonnet-4-20250514
 
 shade upload    # sync memories to storage
 shade dream     # distill skills from memories
+shade relearn   # re-synthesize skills from existing reflections
 shade listen    # start the MCP server
 ```
 
@@ -70,7 +78,7 @@ running anywhere.
 S3-compatible storage with the following layout:
 
 ```
-skills/{name}/SKILL.md      # distilled skills (https://agentskills.io)
-memories/{source}/{id}.json # human session history
-dream/state.json            # tracks which memories have been dreamed about
+skills/{name}/SKILL.md               # distilled skills (https://agentskills.io)
+memories/{source}/{id}.json          # human session history
+dream/reflections/{source}/{id}.md   # per-memory reflections
 ```

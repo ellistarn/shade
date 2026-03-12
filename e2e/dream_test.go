@@ -15,18 +15,18 @@ import (
 
 // mockStore implements dream.Store with in-memory state.
 type mockStore struct {
-	sessions []storage.SessionEntry
-	data     map[string]*source.Session
-	json     map[string][]byte
-	skills   map[string]string
-	deleted  []string
+	sessions    []storage.SessionEntry
+	data        map[string]*source.Session
+	skills      map[string]string
+	reflections map[string]string // memoryKey -> content
+	deleted     []string
 }
 
 func newMockStore() *mockStore {
 	return &mockStore{
-		data:   map[string]*source.Session{},
-		json:   map[string][]byte{},
-		skills: map[string]string{},
+		data:        map[string]*source.Session{},
+		skills:      map[string]string{},
+		reflections: map[string]string{},
 	}
 }
 
@@ -57,16 +57,32 @@ func (m *mockStore) GetSession(_ context.Context, src, sessionID string) (*sourc
 	return s, nil
 }
 
-func (m *mockStore) GetJSON(_ context.Context, key string, v any) error {
-	return fmt.Errorf("not found: %s", key) // always fresh start
+func (m *mockStore) ListReflections(_ context.Context) (map[string]time.Time, error) {
+	result := map[string]time.Time{}
+	for key := range m.reflections {
+		result[key] = time.Now()
+	}
+	return result, nil
 }
 
-func (m *mockStore) PutJSON(_ context.Context, key string, v any) error {
+func (m *mockStore) GetReflection(_ context.Context, memoryKey string) (string, error) {
+	content, ok := m.reflections[memoryKey]
+	if !ok {
+		return "", fmt.Errorf("reflection not found: %s", memoryKey)
+	}
+	return content, nil
+}
+
+func (m *mockStore) PutReflection(_ context.Context, key, content string) error {
+	m.reflections[key] = content
 	return nil
 }
 
 func (m *mockStore) DeletePrefix(_ context.Context, prefix string) error {
 	m.deleted = append(m.deleted, prefix)
+	if prefix == "dream/reflections/" {
+		m.reflections = map[string]string{}
+	}
 	return nil
 }
 

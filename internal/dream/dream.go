@@ -16,10 +16,11 @@ import (
 
 // Store is the subset of storage.Client used by the dream pipeline.
 type Store interface {
-	GetJSON(ctx context.Context, key string, v any) error
-	PutJSON(ctx context.Context, key string, v any) error
 	ListSessions(ctx context.Context) ([]storage.SessionEntry, error)
 	GetSession(ctx context.Context, src, sessionID string) (*source.Session, error)
+	ListReflections(ctx context.Context) (map[string]time.Time, error)
+	GetReflection(ctx context.Context, memoryKey string) (string, error)
+	PutReflection(ctx context.Context, key, content string) error
 	DeletePrefix(ctx context.Context, prefix string) error
 	PutSkill(ctx context.Context, name, content string) error
 }
@@ -28,16 +29,6 @@ type Store interface {
 type LLM interface {
 	Converse(ctx context.Context, system, user string) (string, llm.Usage, error)
 }
-
-// State tracks which memories have been processed so we can prune on subsequent runs.
-type State struct {
-	// LastDream is when the last dream completed.
-	LastDream time.Time `json:"last_dream"`
-	// Memories maps each memory key to when it was last processed.
-	Memories map[string]time.Time `json:"memories"`
-}
-
-const stateKey = "dream/state.json"
 
 // Result summarizes a dream run.
 type Result struct {
@@ -50,7 +41,7 @@ type Result struct {
 
 // Options configures a dream run.
 type Options struct {
-	// Reprocess ignores saved state and reprocesses all memories.
+	// Reprocess ignores persisted reflections and re-reflects all memories.
 	Reprocess bool
 	// Limit caps how many memories to process (0 means no limit).
 	Limit int
@@ -61,32 +52,36 @@ func estimateTokens(s string) int {
 	return len(s) / 4
 }
 
-// Run executes the dream pipeline: load state, map new memories to observations,
-// reduce observations into skills, and persist the results.
+// Run executes the dream pipeline: reflect on new memories, then learn skills
+// from all reflections. Reflections are the source of truth for what has been
+// processed; there is no separate state file.
 func Run(ctx context.Context, store Store, client LLM, opts Options) (*Result, error) {
-	// Load prior dream state (missing state means first run)
-	var state State
-	if opts.Reprocess {
-		log.Println("Reprocessing all memories (ignoring saved state)")
-		state = State{Memories: map[string]time.Time{}}
-	} else {
-		log.Println("Loading dream state...")
-		if err := store.GetJSON(ctx, stateKey, &state); err != nil {
-			log.Println("No prior dream state found, starting fresh")
-			state = State{Memories: map[string]time.Time{}}
-		}
-	}
-
-	// List all memories and filter to ones we haven't processed since their last modification
+	// List all memories and existing reflections
 	log.Println("Listing memories...")
 	entries, err := store.ListSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list memories: %w", err)
 	}
+
+	reflections, err := store.ListReflections(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list reflections: %w", err)
+	}
+
+	// If reprocessing, clear all existing reflections
+	if opts.Reprocess {
+		log.Println("Reprocessing all memories (clearing existing reflections)")
+		if err := store.DeletePrefix(ctx, "dream/reflections/"); err != nil {
+			return nil, fmt.Errorf("failed to clear reflections: %w", err)
+		}
+		reflections = map[string]time.Time{}
+	}
+
+	// Diff: memories without a corresponding reflection (or stale ones) are pending
 	var pending []storage.SessionEntry
 	var pruned int
 	for _, e := range entries {
-		if processed, ok := state.Memories[e.Key]; ok && !e.LastModified.After(processed) {
+		if reflected, ok := reflections[e.Key]; ok && !e.LastModified.After(reflected) {
 			pruned++
 			continue
 		}
@@ -96,91 +91,97 @@ func Run(ctx context.Context, store Store, client LLM, opts Options) (*Result, e
 		log.Printf("Found %d new memories, limiting to %d\n", len(pending), opts.Limit)
 		pending = pending[:opts.Limit]
 	}
-	log.Printf("Found %d memories (%d new, %d already processed)\n", len(entries), len(pending), pruned)
-	if len(pending) == 0 {
-		return &Result{Pruned: pruned, Skills: 0}, nil
-	}
+	log.Printf("Found %d memories (%d new, %d already reflected)\n", len(entries), len(pending), pruned)
 
-	// Estimate tokens: load each session and estimate the input size
-	log.Println("Estimating token usage...")
-	var totalEstimate int
-	for _, entry := range pending {
-		session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
-		if err != nil {
-			continue
-		}
-		conversation := formatSession(session)
-		totalEstimate += estimateTokens(reflectPrompt) + estimateTokens(conversation)
-	}
-	log.Printf("Estimated ~%dk input tokens for reflect phase\n", totalEstimate/1000)
-
-	// Reflect: extract observations from each new/updated memory in parallel
-	log.Printf("Reflecting on %d memories...\n", len(pending))
-	type mapResult struct {
-		key          string
-		observations string
-		usage        llm.Usage
-		err          error
-	}
-	results := make([]mapResult, len(pending))
-	var completed atomic.Int32
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
-	for i, entry := range pending {
-		wg.Add(1)
-		go func(i int, entry storage.SessionEntry) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
-			if err != nil {
-				results[i] = mapResult{key: entry.Key, err: err}
-				n := completed.Add(1)
-				log.Printf("  [%d/%d] %s (error)\n", n, len(pending), entry.Key)
-				return
-			}
-			msgs := len(session.Messages)
-			obs, usage, err := reflect(ctx, client, session)
-			results[i] = mapResult{key: entry.Key, observations: obs, usage: usage, err: err}
-			n := completed.Add(1)
-			if err != nil {
-				log.Printf("  [%d/%d] %s (%d msgs) error: %v\n", n, len(pending), entry.Key, msgs, err)
-			} else {
-				log.Printf("  [%d/%d] %s (%d msgs, %d in / %d out tokens, $%.4f)\n",
-					n, len(pending), entry.Key, msgs, usage.InputTokens, usage.OutputTokens, usage.Cost())
-			}
-		}(i, entry)
-	}
-	wg.Wait()
-
-	// Collect observations, record warnings for failures
-	var allObservations []string
 	var warnings []string
 	var reflectUsage llm.Usage
-	processedKeys := map[string]time.Time{}
-	for _, r := range results {
-		if r.err != nil {
-			warnings = append(warnings, fmt.Sprintf("failed to process %s: %v", r.key, r.err))
-			continue
-		}
-		reflectUsage = reflectUsage.Add(r.usage)
-		if r.observations != "" {
-			allObservations = append(allObservations, r.observations)
-		}
-		processedKeys[r.key] = time.Now()
-	}
-	log.Printf("Reflected on %d memories ($%.4f)\n", len(allObservations), reflectUsage.Cost())
 
-	// Learn: compress observations into skills
-	log.Printf("Learning skills from %d reflections...\n", len(allObservations))
-	skills, learnUsage, err := learn(ctx, client, allObservations)
+	// Reflect on pending memories in parallel
+	if len(pending) > 0 {
+		log.Println("Estimating token usage...")
+		var totalEstimate int
+		for _, entry := range pending {
+			session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
+			if err != nil {
+				continue
+			}
+			conversation := formatSession(session)
+			totalEstimate += estimateTokens(reflectPrompt) + estimateTokens(conversation)
+		}
+		log.Printf("Estimated ~%dk input tokens for reflect phase\n", totalEstimate/1000)
+
+		log.Printf("Reflecting on %d memories...\n", len(pending))
+		type mapResult struct {
+			key          string
+			observations string
+			usage        llm.Usage
+			err          error
+		}
+		results := make([]mapResult, len(pending))
+		var completed atomic.Int32
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 8)
+		for i, entry := range pending {
+			wg.Add(1)
+			go func(i int, entry storage.SessionEntry) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
+				if err != nil {
+					results[i] = mapResult{key: entry.Key, err: err}
+					n := completed.Add(1)
+					log.Printf("  [%d/%d] %s (error)\n", n, len(pending), entry.Key)
+					return
+				}
+				msgs := len(session.Messages)
+				obs, usage, err := reflectOnSession(ctx, client, session)
+				results[i] = mapResult{key: entry.Key, observations: obs, usage: usage, err: err}
+				n := completed.Add(1)
+				if err != nil {
+					log.Printf("  [%d/%d] %s (%d msgs) error: %v\n", n, len(pending), entry.Key, msgs, err)
+				} else {
+					log.Printf("  [%d/%d] %s (%d msgs, %d in / %d out tokens, $%.4f)\n",
+						n, len(pending), entry.Key, msgs, usage.InputTokens, usage.OutputTokens, usage.Cost())
+				}
+			}(i, entry)
+		}
+		wg.Wait()
+
+		// Persist reflections and collect warnings
+		for _, r := range results {
+			if r.err != nil {
+				warnings = append(warnings, fmt.Sprintf("failed to process %s: %v", r.key, r.err))
+				continue
+			}
+			reflectUsage = reflectUsage.Add(r.usage)
+			if r.observations != "" {
+				if err := store.PutReflection(ctx, r.key, r.observations); err != nil {
+					warnings = append(warnings, fmt.Sprintf("failed to save reflection for %s: %v", r.key, err))
+				}
+			}
+		}
+		log.Printf("Reflected on %d memories ($%.4f)\n", len(pending)-len(warnings), reflectUsage.Cost())
+	}
+
+	// Learn from ALL reflections (not just new ones)
+	allReflections, err := loadAllReflections(ctx, store)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load reflections: %w", err)
+	}
+	if len(allReflections) == 0 {
+		return &Result{Pruned: pruned, Skills: 0, Warnings: warnings}, nil
+	}
+
+	log.Printf("Learning skills from %d reflections...\n", len(allReflections))
+	skills, learnUsage, err := learn(ctx, client, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
 	log.Printf("Produced %d skills ($%.4f)\n", len(skills), learnUsage.Cost())
 
-	// Write skills to S3 (clear old skills first, dream produces a complete set)
+	// Write skills (clear old skills first, dream produces a complete set)
 	log.Println("Writing skills to storage...")
 	if err := store.DeletePrefix(ctx, "skills/"); err != nil {
 		return nil, fmt.Errorf("failed to clear old skills: %w", err)
@@ -191,18 +192,12 @@ func Run(ctx context.Context, store Store, client LLM, opts Options) (*Result, e
 		}
 	}
 
-	// Update state with newly processed memories
-	log.Println("Saving dream state...")
-	for k, v := range processedKeys {
-		state.Memories[k] = v
+	processed := len(pending) - len(warnings)
+	if processed < 0 {
+		processed = 0
 	}
-	state.LastDream = time.Now()
-	if err := store.PutJSON(ctx, stateKey, &state); err != nil {
-		warnings = append(warnings, fmt.Sprintf("failed to save dream state: %v", err))
-	}
-
 	return &Result{
-		Processed: len(allObservations),
+		Processed: processed,
 		Pruned:    pruned,
 		Skills:    len(skills),
 		Usage:     reflectUsage.Add(learnUsage),
@@ -210,7 +205,62 @@ func Run(ctx context.Context, store Store, client LLM, opts Options) (*Result, e
 	}, nil
 }
 
-func reflect(ctx context.Context, client LLM, session *source.Session) (string, llm.Usage, error) {
+// Relearn re-runs only the learn phase using persisted reflections.
+// Use this to re-synthesize skills with improved techniques without re-reflecting.
+func Relearn(ctx context.Context, store Store, client LLM) (*Result, error) {
+	allReflections, err := loadAllReflections(ctx, store)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load reflections: %w", err)
+	}
+	if len(allReflections) == 0 {
+		return &Result{}, nil
+	}
+
+	log.Printf("Re-learning skills from %d reflections...\n", len(allReflections))
+	skills, usage, err := learn(ctx, client, allReflections)
+	if err != nil {
+		return nil, fmt.Errorf("learn failed: %w", err)
+	}
+	log.Printf("Produced %d skills ($%.4f)\n", len(skills), usage.Cost())
+
+	log.Println("Writing skills to storage...")
+	var warnings []string
+	if err := store.DeletePrefix(ctx, "skills/"); err != nil {
+		return nil, fmt.Errorf("failed to clear old skills: %w", err)
+	}
+	for name, content := range skills {
+		if err := store.PutSkill(ctx, name, content); err != nil {
+			warnings = append(warnings, fmt.Sprintf("failed to write skill %s: %v", name, err))
+		}
+	}
+
+	return &Result{
+		Skills:   len(skills),
+		Usage:    usage,
+		Warnings: warnings,
+	}, nil
+}
+
+// loadAllReflections fetches every persisted reflection from storage.
+func loadAllReflections(ctx context.Context, store Store) ([]string, error) {
+	index, err := store.ListReflections(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var reflections []string
+	for memoryKey := range index {
+		content, err := store.GetReflection(ctx, memoryKey)
+		if err != nil {
+			continue
+		}
+		if content != "" {
+			reflections = append(reflections, content)
+		}
+	}
+	return reflections, nil
+}
+
+func reflectOnSession(ctx context.Context, client LLM, session *source.Session) (string, llm.Usage, error) {
 	conversation := formatSession(session)
 	if conversation == "" {
 		return "", llm.Usage{}, nil

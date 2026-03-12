@@ -39,7 +39,7 @@ type modelPricing struct {
 // https://aws.amazon.com/bedrock/pricing/
 var pricingTable = map[string]modelPricing{
 	"claude-sonnet-4": {3.0 / 1_000_000, 15.0 / 1_000_000},
-	"claude-opus-4":   {6.0 / 1_000_000, 30.0 / 1_000_000},
+	"claude-opus-4":   {5.0 / 1_000_000, 25.0 / 1_000_000},
 }
 
 // lookupPricing finds pricing by matching a model family key against the full
@@ -138,6 +138,11 @@ func NewClientWithRuntime(_ context.Context, runtime Runtime) *Client {
 		model:    "test-model",
 		throttle: throttle,
 	}
+}
+
+// Model returns the resolved model ID (e.g. "us.anthropic.claude-opus-4-6-v1").
+func (c *Client) Model() string {
+	return c.model
 }
 
 // refillTokens adds request tokens at a steady rate.
