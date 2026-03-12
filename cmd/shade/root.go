@@ -21,7 +21,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newDreamCmd())
 	cmd.AddCommand(newInspectCmd())
 	cmd.AddCommand(newListenCmd())
-	cmd.AddCommand(newAskCmd())
+	cmd.AddCommand(newAdviseCmd())
 	return cmd
 }
 
