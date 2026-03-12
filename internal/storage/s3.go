@@ -13,9 +13,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/ellistarn/shade/internal/awsconfig"
-	"github.com/ellistarn/shade/internal/skill"
-	"github.com/ellistarn/shade/internal/source"
+	"github.com/ellistarn/muse/internal/awsconfig"
+	"github.com/ellistarn/muse/internal/skill"
+	"github.com/ellistarn/muse/internal/source"
 )
 
 type Client struct {

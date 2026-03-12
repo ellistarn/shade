@@ -1,6 +1,6 @@
 package dream
 
-import "github.com/ellistarn/shade/prompts"
+import "github.com/ellistarn/muse/prompts"
 
 // Reflect-phase prompts (summarize → extract → refine)
 var reflectSummarizePrompt = prompts.ReflectSummarize

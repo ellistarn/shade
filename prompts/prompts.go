@@ -14,8 +14,8 @@ var ReflectRefine string
 //go:embed learn.md
 var Learn string
 
-//go:embed shade.md
-var Shade string
+//go:embed muse.md
+var Muse string
 
 //go:embed tool.md
 var Tool string

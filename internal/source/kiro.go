@@ -12,7 +12,7 @@ import (
 
 // KiroSessions reads all sessions from Kiro's workspace session files.
 func KiroSessions() ([]Session, error) {
-	kiroDir := os.Getenv("SHADE_KIRO_DIR")
+	kiroDir := os.Getenv("MUSE_KIRO_DIR")
 	if kiroDir == "" {
 		dir, err := defaultKiroDir()
 		if err != nil {

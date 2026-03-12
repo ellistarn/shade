@@ -11,23 +11,23 @@ var bucket string
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:           "shade",
-		Short:         "A projection of how you think",
+		Use:           "muse",
+		Short:         "The distilled essence of how you think",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
-	cmd.PersistentFlags().StringVar(&bucket, "bucket", os.Getenv("SHADE_BUCKET"), "S3 bucket name (or set SHADE_BUCKET)")
+	cmd.PersistentFlags().StringVar(&bucket, "bucket", os.Getenv("MUSE_BUCKET"), "S3 bucket name (or set MUSE_BUCKET)")
 	cmd.AddCommand(newPushCmd())
 	cmd.AddCommand(newDreamCmd())
 	cmd.AddCommand(newInspectCmd())
 	cmd.AddCommand(newListenCmd())
-	cmd.AddCommand(newAdviseCmd())
+	cmd.AddCommand(newAskCmd())
 	return cmd
 }
 
 func requireBucket() error {
 	if bucket == "" {
-		return fmt.Errorf("bucket is required: use --bucket or set SHADE_BUCKET")
+		return fmt.Errorf("bucket is required: use --bucket or set MUSE_BUCKET")
 	}
 	return nil
 }

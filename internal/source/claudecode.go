@@ -14,7 +14,7 @@ const defaultClaudeDir = ".claude"
 
 // ClaudeCodeSessions reads all sessions from Claude Code's JSONL files.
 func ClaudeCodeSessions() ([]Session, error) {
-	claudeDir := os.Getenv("SHADE_CLAUDE_DIR")
+	claudeDir := os.Getenv("MUSE_CLAUDE_DIR")
 	if claudeDir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {

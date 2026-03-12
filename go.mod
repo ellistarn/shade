@@ -1,4 +1,4 @@
-module github.com/ellistarn/shade
+module github.com/ellistarn/muse
 
 go 1.25.5
 

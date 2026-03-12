@@ -7,10 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ellistarn/shade/internal/bedrock"
-	"github.com/ellistarn/shade/internal/log"
-	"github.com/ellistarn/shade/internal/skill"
-	"github.com/ellistarn/shade/internal/storage"
+	"github.com/ellistarn/muse/internal/bedrock"
+	"github.com/ellistarn/muse/internal/log"
+	"github.com/ellistarn/muse/internal/skill"
+	"github.com/ellistarn/muse/internal/storage"
 )
 
 func newInspectCmd() *cobra.Command {
@@ -39,7 +39,7 @@ func newInspectCmd() *cobra.Command {
 				return fmt.Errorf("failed to load skills: %w", err)
 			}
 			if len(skills) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No skills found. Run 'shade dream' to generate skills from memories.")
+				fmt.Fprintln(cmd.OutOrStdout(), "No skills found. Run 'muse dream' to generate skills from memories.")
 				return nil
 			}
 			log.Printf("Found %d skills\n", len(skills))
@@ -69,7 +69,7 @@ func runDiff(cmd *cobra.Command, store *storage.Client, s3Client skill.S3API) er
 		return fmt.Errorf("failed to list dream history: %w", err)
 	}
 	if len(dreams) == 0 {
-		return fmt.Errorf("no dream history found; run 'shade dream' to create a snapshot")
+		return fmt.Errorf("no dream history found; run 'muse dream' to create a snapshot")
 	}
 	latest := dreams[len(dreams)-1]
 	log.Printf("Comparing snapshot %s with current skills\n", latest)

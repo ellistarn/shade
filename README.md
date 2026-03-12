@@ -1,12 +1,12 @@
-# Shade
+# Muse
 
-A shade is a projection of how you think. It absorbs your memories from agent interactions, distills
-them into skills, and uses those skills to advise any agent that asks.
+A muse is the distilled essence of how you think. It absorbs your memories from agent interactions,
+distills them into skills, and uses those skills to advise any agent that asks.
 
 ## How it works
 
 **Push** pulls memories from local agent databases on your machine (OpenCode, Claude Code, Kiro,
-etc.) and pushes them to storage. Your shade learns from these memories by dreaming.
+etc.) and pushes them to storage. Your muse learns from these memories by dreaming.
 
 **Dream** reads your uploaded memories, focusing on the feedback you give to models: where they get
 things wrong, what you correct, what you reinforce. It reflects on each memory individually, then
@@ -15,67 +15,67 @@ information: they teach models how you want things done without leaking underlyi
 lossy by design, keeping what matters and forgetting what doesn't.
 
 Each dream snapshots your previous skills before overwriting them, so you have a full history of how
-your shade has evolved. Reflections are persisted so you can re-synthesize skills later with better
+your muse has evolved. Reflections are persisted so you can re-synthesize skills later with better
 models or prompts (`dream --learn`) without re-processing all your memories.
 
-**Inspect** prints your current skills so you can see what your shade has learned. Use
+**Inspect** prints your current skills so you can see what your muse knows. Use
 `inspect --diff` to get an LLM-generated summary of what changed since the last dream.
 
-**Advise** asks your shade a question and gets back guidance shaped by your skills. Available both as
+**Ask** asks your muse a question and gets back guidance shaped by your skills. Available both as
 a CLI command and as an MCP tool (via `listen`). Each call is stateless, a one-shot interaction with
 no session history or persistence.
 
-**Listen** starts an MCP server that exposes the **advise** tool so agents can query your shade
+**Listen** starts an MCP server that exposes the **ask** tool so agents can query your muse
 programmatically.
 
-## How advise works
+## How ask works
 
-When you ask a question, the shade looks through its skills to find what's relevant, reads them, and
+When you ask a question, your muse looks through its skills to find what's relevant, reads them, and
 responds with guidance shaped by your patterns. It may pull in multiple skills across several rounds
 of reasoning, but all of that happens internally. You only see the final answer.
 
-Each call is stateless. The shade has no memory of previous questions and no conversation history.
+Each call is stateless. Your muse has no memory of previous questions and no conversation history.
 It knows what it's learned from dreaming and nothing else. If it doesn't have a relevant skill, it
 says so.
 
 ## Usage
 
 ```
-export SHADE_BUCKET=$USER-shade
-export SHADE_MODEL=claude-sonnet-4-20250514
+export MUSE_BUCKET=$USER-muse
+export MUSE_MODEL=claude-sonnet-4-20250514
 
-shade push              # push memories to storage
-shade dream             # distill skills from memories
-shade dream --learn     # re-synthesize skills from existing reflections
-shade inspect           # print all skills
-shade inspect --diff    # summarize what changed since the last dream
-shade advise "question" # ask your shade a question
-shade listen            # start the MCP server
+muse push              # push memories to storage
+muse dream             # distill skills from memories
+muse dream --learn     # re-synthesize skills from existing reflections
+muse inspect           # print all skills
+muse inspect --diff    # summarize what changed since the last dream
+muse ask "question"    # ask your muse a question
+muse listen            # start the MCP server
 ```
 
 ## Install
 
 ```
-go install github.com/ellistarn/shade/cmd/shade@latest
+go install github.com/ellistarn/muse/cmd/muse@latest
 ```
 
-Then add your shade as an MCP server so agents can ask it questions. For local use, add a stdio
-server to your agent's MCP config:
+Then add your muse as an MCP server so agents can ask it questions. For local use, add a stdio
+server to your agent's MCP config. Name the server after whoever's muse it is:
 
 ```json
 {
   "mcpServers": {
-    "shade": {
-      "command": "shade",
+    "ellis": {
+      "command": "muse",
       "args": ["listen"]
     }
   }
 }
 ```
 
-For other operations like pushing memories or inspecting skills, use the shade CLI directly.
+For other operations like pushing memories or inspecting skills, use the muse CLI directly.
 
-The MCP server can also be deployed as a hosted remote server so your shade is available to agents
+The MCP server can also be deployed as a hosted remote server so your muse is available to agents
 running anywhere.
 
 ## Storage

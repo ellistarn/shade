@@ -15,7 +15,7 @@ const defaultOpenCodeDB = ".local/share/opencode/opencode.db"
 
 // OpenCodeSessions reads all sessions from the OpenCode SQLite database.
 func OpenCodeSessions() ([]Session, error) {
-	dbPath := os.Getenv("SHADE_OPENCODE_DB")
+	dbPath := os.Getenv("MUSE_OPENCODE_DB")
 	if dbPath == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {

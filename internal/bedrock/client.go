@@ -18,9 +18,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
-	"github.com/ellistarn/shade/internal/awsconfig"
-	"github.com/ellistarn/shade/internal/llm"
-	"github.com/ellistarn/shade/internal/log"
+	"github.com/ellistarn/muse/internal/awsconfig"
+	"github.com/ellistarn/muse/internal/llm"
+	"github.com/ellistarn/muse/internal/log"
 )
 
 const (
@@ -87,7 +87,7 @@ func NewClient(ctx context.Context, model string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	if override := os.Getenv("SHADE_MODEL"); override != "" {
+	if override := os.Getenv("MUSE_MODEL"); override != "" {
 		model = override
 	} else {
 		resolved, err := resolveModel(ctx, cfg, model)

@@ -5,10 +5,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ellistarn/shade/internal/bedrock"
-	"github.com/ellistarn/shade/internal/dream"
-	"github.com/ellistarn/shade/internal/log"
-	"github.com/ellistarn/shade/internal/storage"
+	"github.com/ellistarn/muse/internal/bedrock"
+	"github.com/ellistarn/muse/internal/dream"
+	"github.com/ellistarn/muse/internal/log"
+	"github.com/ellistarn/muse/internal/storage"
 )
 
 func newDreamCmd() *cobra.Command {

@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ellistarn/shade/internal/dream"
-	"github.com/ellistarn/shade/internal/llm"
-	"github.com/ellistarn/shade/internal/source"
-	"github.com/ellistarn/shade/internal/storage"
+	"github.com/ellistarn/muse/internal/dream"
+	"github.com/ellistarn/muse/internal/llm"
+	"github.com/ellistarn/muse/internal/source"
+	"github.com/ellistarn/muse/internal/storage"
 )
 
 // mockStore implements dream.Store with in-memory state.

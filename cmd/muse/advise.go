@@ -6,25 +6,25 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ellistarn/shade/internal/shade"
+	"github.com/ellistarn/muse/internal/muse"
 )
 
-func newAdviseCmd() *cobra.Command {
+func newAskCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "advise [question]",
-		Short: "Ask the shade for advice",
+		Use:   "ask [question]",
+		Short: "Ask your muse a question",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireBucket(); err != nil {
 				return err
 			}
 			ctx := cmd.Context()
-			s, err := shade.New(ctx, bucket)
+			m, err := muse.New(ctx, bucket)
 			if err != nil {
 				return err
 			}
 			question := strings.Join(args, " ")
-			answer, err := s.Advise(ctx, question)
+			answer, err := m.Ask(ctx, question)
 			if err != nil {
 				return err
 			}

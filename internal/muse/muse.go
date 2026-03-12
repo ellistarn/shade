@@ -1,4 +1,4 @@
-package shade
+package muse
 
 import (
 	"context"
@@ -10,13 +10,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/ellistarn/shade/internal/awsconfig"
-	"github.com/ellistarn/shade/internal/bedrock"
-	"github.com/ellistarn/shade/internal/log"
-	"github.com/ellistarn/shade/internal/skill"
-	"github.com/ellistarn/shade/internal/source"
-	"github.com/ellistarn/shade/internal/storage"
-	"github.com/ellistarn/shade/prompts"
+	"github.com/ellistarn/muse/internal/awsconfig"
+	"github.com/ellistarn/muse/internal/bedrock"
+	"github.com/ellistarn/muse/internal/log"
+	"github.com/ellistarn/muse/internal/skill"
+	"github.com/ellistarn/muse/internal/source"
+	"github.com/ellistarn/muse/internal/storage"
+	"github.com/ellistarn/muse/prompts"
 )
 
 // UploadResult summarizes what happened during an upload sync.
@@ -28,8 +28,8 @@ type UploadResult struct {
 	Warnings []string
 }
 
-// Shade holds the state needed for all operations.
-type Shade struct {
+// Muse holds the state needed for all operations.
+type Muse struct {
 	storage *storage.Client
 	s3      skill.S3API
 	bedrock *bedrock.Client
@@ -37,7 +37,7 @@ type Shade struct {
 	catalog []skill.Skill
 }
 
-func New(ctx context.Context, bucket string) (*Shade, error) {
+func New(ctx context.Context, bucket string) (*Muse, error) {
 	cfg, err := awsconfig.Load(ctx)
 	if err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func New(ctx context.Context, bucket string) (*Shade, error) {
 		return nil, fmt.Errorf("failed to load skill catalog: %w", err)
 	}
 	log.Printf("Loaded %d skills\n", len(catalog))
-	return &Shade{
+	return &Muse{
 		storage: storageClient,
 		s3:      s3Client,
 		bedrock: bedrockClient,
@@ -65,16 +65,16 @@ func New(ctx context.Context, bucket string) (*Shade, error) {
 	}, nil
 }
 
-// NewForTest creates a Shade with caller-provided dependencies.
-func NewForTest(s3Client skill.S3API, bedrockClient *bedrock.Client, bucket string) *Shade {
-	return &Shade{
+// NewForTest creates a Muse with caller-provided dependencies.
+func NewForTest(s3Client skill.S3API, bedrockClient *bedrock.Client, bucket string) *Muse {
+	return &Muse{
 		s3:      s3Client,
 		bedrock: bedrockClient,
 		bucket:  bucket,
 	}
 }
 
-var systemPrompt = prompts.Shade
+var systemPrompt = prompts.Muse
 
 // readSkillToolSpec defines the read_skill tool for Bedrock tool use.
 func readSkillToolSpec() *types.ToolConfiguration {
@@ -102,12 +102,12 @@ func readSkillToolSpec() *types.ToolConfiguration {
 	}
 }
 
-// Advise answers a question using the shade's distilled skills.
+// Ask answers a question using the muse's distilled skills.
 // The LLM sees a catalog of skill names and descriptions, then uses tool
 // calling to fetch the full content of any skills it deems relevant.
 // This is a stateless one-shot: no session history, no persistence.
-func (s *Shade) Advise(ctx context.Context, question string) (string, error) {
-	system := fmt.Sprintf(systemPrompt, formatCatalog(s.catalog))
+func (m *Muse) Ask(ctx context.Context, question string) (string, error) {
+	system := fmt.Sprintf(systemPrompt, formatCatalog(m.catalog))
 	toolConfig := readSkillToolSpec()
 
 	handler := func(name string, input map[string]any) (string, error) {
@@ -118,14 +118,14 @@ func (s *Shade) Advise(ctx context.Context, question string) (string, error) {
 		if !ok || skillName == "" {
 			return "", fmt.Errorf("read_skill requires a 'name' parameter")
 		}
-		sk, err := skill.LoadOne(ctx, s.s3, s.bucket, skillName)
+		sk, err := skill.LoadOne(ctx, m.s3, m.bucket, skillName)
 		if err != nil {
 			return "", fmt.Errorf("skill %q not found", skillName)
 		}
 		return sk.Content, nil
 	}
 
-	answer, _, err := s.bedrock.ConverseWithTools(ctx, system, question, toolConfig, handler,
+	answer, _, err := m.bedrock.ConverseWithTools(ctx, system, question, toolConfig, handler,
 		"Now produce your final answer to the original question. Be direct and concise.")
 	return answer, err
 }
@@ -142,9 +142,9 @@ func formatCatalog(skills []skill.Skill) string {
 }
 
 // Upload scans local sources, diffs against S3, and uploads changed sessions.
-func (s *Shade) Upload(ctx context.Context) (*UploadResult, error) {
+func (m *Muse) Upload(ctx context.Context) (*UploadResult, error) {
 	log.Println("Listing remote sessions...")
-	existing, err := s.storage.ListSessions(ctx)
+	existing, err := m.storage.ListSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote sessions: %w", err)
 	}
@@ -189,7 +189,7 @@ func (s *Shade) Upload(ctx context.Context) (*UploadResult, error) {
 				continue
 			}
 		}
-		n, err := s.storage.PutSession(ctx, sess)
+		n, err := m.storage.PutSession(ctx, sess)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("failed to upload %s: %v", sess.SessionID, err))
 			continue

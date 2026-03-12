@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ellistarn/shade/internal/llm"
-	"github.com/ellistarn/shade/internal/log"
-	"github.com/ellistarn/shade/internal/source"
-	"github.com/ellistarn/shade/internal/storage"
+	"github.com/ellistarn/muse/internal/llm"
+	"github.com/ellistarn/muse/internal/log"
+	"github.com/ellistarn/muse/internal/source"
+	"github.com/ellistarn/muse/internal/storage"
 )
 
 // Store is the subset of storage.Client used by the dream pipeline.

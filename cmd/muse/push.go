@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ellistarn/shade/internal/shade"
+	"github.com/ellistarn/muse/internal/muse"
 )
 
 func newPushCmd() *cobra.Command {
@@ -17,11 +17,11 @@ func newPushCmd() *cobra.Command {
 				return err
 			}
 			ctx := cmd.Context()
-			s, err := shade.New(ctx, bucket)
+			m, err := muse.New(ctx, bucket)
 			if err != nil {
 				return err
 			}
-			result, err := s.Upload(ctx)
+			result, err := m.Upload(ctx)
 			if err != nil {
 				return err
 			}
@@ -30,7 +30,7 @@ func newPushCmd() *cobra.Command {
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Found %d local sessions\n", result.Total)
 			if result.Uploaded > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Uploaded %d sessions (%s), %d unchanged\n", result.Uploaded, shade.FormatBytes(result.Bytes), result.Skipped)
+				fmt.Fprintf(cmd.OutOrStdout(), "Uploaded %d sessions (%s), %d unchanged\n", result.Uploaded, muse.FormatBytes(result.Bytes), result.Skipped)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "All %d sessions unchanged\n", result.Skipped)
 			}

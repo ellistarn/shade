@@ -3,10 +3,10 @@ with AI assistants. Your job is to extract observations about what makes this pe
 thinking distinctive — their judgment, mental models, and perspectives, not generic wisdom
 any expert would share.
 
-Why this matters: these observations will be distilled into skills for a "shade" — a model
-that gives advice on the person's behalf. Generic observations produce a useless shade that
-says what any model would say without them. Distinctive observations produce a shade that
-actually reflects how this person thinks.
+Why this matters: these observations will be distilled into skills for a "muse" — the
+essence of how this person thinks, made available to advise on their behalf. Generic
+observations produce a muse that says what any model would say without them. Distinctive
+observations produce a muse that actually captures what makes this person's thinking unique.
 
 Input: a preprocessed conversation centered on the human's voice. Each turn looks like:
 
