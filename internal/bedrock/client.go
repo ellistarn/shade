@@ -181,9 +181,9 @@ func (c *Client) Converse(ctx context.Context, system, user string) (string, Usa
 const maxToolRounds = 3
 
 // ConverseWithTools sends a message and handles tool use in a loop.
-// If the LLM requests tools, the handler is called for each, results are
-// sent back, and the LLM can request more tools or give a final answer.
-// Capped at maxToolRounds to prevent runaway loops.
+// The LLM can request tools up to maxToolRounds times. Once the tool loop
+// completes, a final synthesis call (without tools) produces the user-facing
+// answer. This keeps intermediate reasoning and tool calls internal.
 func (c *Client) ConverseWithTools(ctx context.Context, system, user string, toolConfig *types.ToolConfiguration, handler ToolHandler) (string, Usage, error) {
 	messages := []types.Message{
 		{
@@ -194,27 +194,32 @@ func (c *Client) ConverseWithTools(ctx context.Context, system, user string, too
 
 	var totalUsage Usage
 	for range maxToolRounds {
-		text, usage, stop, assistantContent, err := c.converseRaw(ctx, system, messages, toolConfig)
+		_, usage, stop, assistantContent, err := c.converseRaw(ctx, system, messages, toolConfig)
 		totalUsage = totalUsage.Add(usage)
 		if err != nil {
-			return text, totalUsage, err
+			return "", totalUsage, err
 		}
-		if stop != types.StopReasonToolUse {
-			return text, totalUsage, nil
-		}
-
-		// Resolve tool calls and continue the loop
+		// Append the assistant's response (text or tool calls) to the conversation
 		messages = append(messages, types.Message{
 			Role:    types.ConversationRoleAssistant,
 			Content: assistantContent,
 		})
+		if stop != types.StopReasonToolUse {
+			break
+		}
 		toolResults := resolveToolCalls(assistantContent, handler)
 		messages = append(messages, types.Message{
 			Role:    types.ConversationRoleUser,
 			Content: toolResults,
 		})
 	}
-	// If we exhaust all rounds, make one final call without tools to force a text response
+	// Synthesize: one final call without tools to produce the user-facing answer.
+	// The full conversation (including tool results) is context, but the model
+	// produces a clean response without exposing its reasoning process.
+	messages = append(messages, types.Message{
+		Role:    types.ConversationRoleUser,
+		Content: []types.ContentBlock{&types.ContentBlockMemberText{Value: "Now produce your final answer to the original question. Be direct and concise."}},
+	})
 	text, usage, _, _, err := c.converseRaw(ctx, system, messages, nil)
 	return text, totalUsage.Add(usage), err
 }

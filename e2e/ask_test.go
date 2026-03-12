@@ -161,7 +161,8 @@ func TestAskWithSkillLookup(t *testing.T) {
 
 	runtime := &mockRuntime{responses: []bedrockruntime.ConverseOutput{
 		toolUseResponse("tool-1", "naming-conventions"),
-		textResponse("Use kebab-case for your file names."),
+		textResponse("I found the naming skill."),           // internal reasoning
+		textResponse("Use kebab-case for your file names."), // synthesis
 	}}
 
 	ctx := context.Background()
@@ -176,9 +177,9 @@ func TestAskWithSkillLookup(t *testing.T) {
 		t.Errorf("answer = %q, want %q", answer, "Use kebab-case for your file names.")
 	}
 
-	// Verify two Bedrock calls: first with catalog, second with tool result
-	if len(runtime.calls) != 2 {
-		t.Fatalf("Bedrock calls = %d, want 2", len(runtime.calls))
+	// 3 Bedrock calls: tool request + tool result response + synthesis
+	if len(runtime.calls) != 3 {
+		t.Fatalf("Bedrock calls = %d, want 3", len(runtime.calls))
 	}
 	// First call should have the catalog in system prompt
 	if !strings.Contains(runtime.calls[0].system, "naming-conventions") {
@@ -187,12 +188,16 @@ func TestAskWithSkillLookup(t *testing.T) {
 	if !strings.Contains(runtime.calls[0].system, "error-handling") {
 		t.Error("first call system prompt missing error-handling in catalog")
 	}
-	// First call: 1 user message. Second call: 3 messages (user + assistant tool_use + user tool_result)
+	// Message counts: 1, 3 (user + assistant tool_use + user tool_result),
+	// 5 (+ assistant text + user synthesis prompt)
 	if runtime.calls[0].messages != 1 {
 		t.Errorf("first call messages = %d, want 1", runtime.calls[0].messages)
 	}
 	if runtime.calls[1].messages != 3 {
 		t.Errorf("second call messages = %d, want 3", runtime.calls[1].messages)
+	}
+	if runtime.calls[2].messages != 5 {
+		t.Errorf("third call messages = %d, want 5", runtime.calls[2].messages)
 	}
 }
 
@@ -204,7 +209,8 @@ func TestAskNoSkillsNeeded(t *testing.T) {
 
 	// LLM answers directly without calling read_skill
 	runtime := &mockRuntime{responses: []bedrockruntime.ConverseOutput{
-		textResponse("Hello! How can I help?"),
+		textResponse("I can help with that."),  // internal reasoning
+		textResponse("Hello! How can I help?"), // synthesis
 	}}
 
 	ctx := context.Background()
@@ -219,9 +225,9 @@ func TestAskNoSkillsNeeded(t *testing.T) {
 		t.Errorf("answer = %q, want %q", answer, "Hello! How can I help?")
 	}
 
-	// Only one Bedrock call, no tool use round-trip
-	if len(runtime.calls) != 1 {
-		t.Fatalf("Bedrock calls = %d, want 1", len(runtime.calls))
+	// Two Bedrock calls: initial response + synthesis
+	if len(runtime.calls) != 2 {
+		t.Fatalf("Bedrock calls = %d, want 2", len(runtime.calls))
 	}
 	// Catalog should still be in system prompt
 	if !strings.Contains(runtime.calls[0].system, "naming-conventions") {
@@ -233,7 +239,8 @@ func TestAskEmptyCatalog(t *testing.T) {
 	s3Client := &mockS3{skills: map[string]string{}}
 
 	runtime := &mockRuntime{responses: []bedrockruntime.ConverseOutput{
-		textResponse("I don't have any relevant skills for that."),
+		textResponse("No skills match this question."),             // internal reasoning
+		textResponse("I don't have any relevant skills for that."), // synthesis
 	}}
 
 	ctx := context.Background()
@@ -248,8 +255,8 @@ func TestAskEmptyCatalog(t *testing.T) {
 		t.Errorf("answer = %q", answer)
 	}
 
-	if len(runtime.calls) != 1 {
-		t.Fatalf("Bedrock calls = %d, want 1", len(runtime.calls))
+	if len(runtime.calls) != 2 {
+		t.Fatalf("Bedrock calls = %d, want 2", len(runtime.calls))
 	}
 	if !strings.Contains(runtime.calls[0].system, "No skills are currently available") {
 		t.Error("system prompt should indicate no skills available")
@@ -269,7 +276,8 @@ func TestAskMultipleSkills(t *testing.T) {
 	// LLM requests two skills in one round
 	runtime := &mockRuntime{responses: []bedrockruntime.ConverseOutput{
 		multiToolUseResponse("naming-conventions", "error-handling"),
-		textResponse("Use kebab-case and wrap errors with context."),
+		textResponse("I found both skills."),                         // internal reasoning
+		textResponse("Use kebab-case and wrap errors with context."), // synthesis
 	}}
 
 	ctx := context.Background()
@@ -284,12 +292,12 @@ func TestAskMultipleSkills(t *testing.T) {
 		t.Errorf("answer = %q", answer)
 	}
 
-	if len(runtime.calls) != 2 {
-		t.Fatalf("Bedrock calls = %d, want 2", len(runtime.calls))
+	if len(runtime.calls) != 3 {
+		t.Fatalf("Bedrock calls = %d, want 3", len(runtime.calls))
 	}
-	// Second call should have 3 messages: user + assistant (2 tool_use blocks) + user (2 tool_result blocks)
-	if runtime.calls[1].messages != 3 {
-		t.Errorf("second call messages = %d, want 3", runtime.calls[1].messages)
+	// Third call (synthesis) should have 5 messages: user + assistant (2 tool_use blocks) + user (2 tool_result blocks) + assistant text + user synthesis
+	if runtime.calls[2].messages != 5 {
+		t.Errorf("third call messages = %d, want 5", runtime.calls[2].messages)
 	}
 }
 
@@ -303,11 +311,12 @@ func TestAskMultiRoundToolUse(t *testing.T) {
 
 	// Round 1: LLM reads error-handling
 	// Round 2: after seeing "see also: logging", LLM reads logging
-	// Round 3: LLM gives final answer
+	// Round 3: LLM gives internal answer, then synthesis produces final answer
 	runtime := &mockRuntime{responses: []bedrockruntime.ConverseOutput{
 		toolUseResponse("tool-1", "error-handling"),
 		toolUseResponse("tool-2", "logging"),
-		textResponse("Wrap errors with context and use structured logging."),
+		textResponse("I've gathered both skills."),                           // internal reasoning
+		textResponse("Wrap errors with context and use structured logging."), // synthesis
 	}}
 
 	ctx := context.Background()
@@ -322,11 +331,11 @@ func TestAskMultiRoundToolUse(t *testing.T) {
 		t.Errorf("answer = %q", answer)
 	}
 
-	// 3 Bedrock calls: initial + resolve error-handling + resolve logging + final answer
-	if len(runtime.calls) != 3 {
-		t.Fatalf("Bedrock calls = %d, want 3", len(runtime.calls))
+	// 4 Bedrock calls: tool1 + tool2 + internal answer + synthesis
+	if len(runtime.calls) != 4 {
+		t.Fatalf("Bedrock calls = %d, want 4", len(runtime.calls))
 	}
-	// Message counts grow: 1, 3, 5 (each round adds assistant + user messages)
+	// Message counts grow: 1, 3, 5, then +2 for synthesis = 7
 	if runtime.calls[0].messages != 1 {
 		t.Errorf("call 0 messages = %d, want 1", runtime.calls[0].messages)
 	}
@@ -335,5 +344,8 @@ func TestAskMultiRoundToolUse(t *testing.T) {
 	}
 	if runtime.calls[2].messages != 5 {
 		t.Errorf("call 2 messages = %d, want 5", runtime.calls[2].messages)
+	}
+	if runtime.calls[3].messages != 7 {
+		t.Errorf("call 3 messages = %d, want 7", runtime.calls[3].messages)
 	}
 }

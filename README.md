@@ -18,20 +18,16 @@ forgetting what doesn't.
 gets back guidance shaped by your skills. Each call is stateless, a one-shot interaction with no
 session history or persistence.
 
-## How the agent loop works
+## How ask works
 
-When an agent asks a question, the shade runs a lightweight agent loop within a single request. It
-presents the LLM with a catalog of available skills (just names and one-line descriptions), then
-lets the LLM decide which skills are relevant. The LLM can call a `read_skill` tool to fetch the
-full content of any skill it needs. Once it has the context it wants, it answers.
+When an agent asks a question, the shade looks through its skills to find what's relevant, reads
+them, and responds with guidance shaped by your patterns. It may pull in multiple skills across
+several rounds of reasoning, but all of that happens internally. The agent only sees the final
+answer.
 
-This is progressive disclosure: the LLM only sees skill content that's relevant to the question
-instead of everything at once. The loop is capped at one round of tool use (ask, fetch skills,
-answer) to keep latency predictable. There's no multi-turn session history and no conversation
-persistence. Every call starts fresh.
-
-A full agentic loop with multi-turn reasoning may come later, but stateless one-shot is sufficient
-for now.
+Each call is stateless. The shade has no memory of previous questions and no conversation history.
+It knows what it's learned from dreaming and nothing else. If it doesn't have a relevant skill, it
+says so.
 
 ## Usage
 
