@@ -5,8 +5,8 @@ them into skills, and serves those skills to any agent that asks.
 
 ## How it works
 
-**Upload** pulls memories from local agent databases on your machine (OpenCode, Claude Code, Kiro,
-etc.) and syncs them to storage. Your shade learns from these memories by dreaming.
+**Push** pulls memories from local agent databases on your machine (OpenCode, Claude Code, Kiro,
+etc.) and pushes them to storage. Your shade learns from these memories by dreaming.
 
 **Dream** reads your uploaded memories, focusing on the feedback you give to models: where they get
 things wrong, what you correct, what you reinforce. It reflects on each memory individually, then
@@ -68,7 +68,7 @@ server to your agent's MCP config:
 }
 ```
 
-For other operations like uploading memories or inspecting skills, use the shade CLI directly.
+For other operations like pushing memories or inspecting skills, use the shade CLI directly.
 
 The MCP server can also be deployed as a hosted remote server so your shade is available to agents
 running anywhere.
