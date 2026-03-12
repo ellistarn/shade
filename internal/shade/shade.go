@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/ellistarn/shade/internal/bedrock"
+	"github.com/ellistarn/shade/internal/log"
 	"github.com/ellistarn/shade/internal/skill"
 	"github.com/ellistarn/shade/internal/source"
 	"github.com/ellistarn/shade/internal/storage"
@@ -93,34 +94,34 @@ func formatSkills(skills []skill.Skill) string {
 
 // Upload scans local sources, diffs against S3, and uploads changed sessions.
 func (s *Shade) Upload(ctx context.Context) (*UploadResult, error) {
-	fmt.Println("Listing remote sessions...")
+	log.Println("Listing remote sessions...")
 	existing, err := s.storage.ListSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote sessions: %w", err)
 	}
-	fmt.Printf("Found %d remote sessions\n", len(existing))
+	log.Printf("Found %d remote sessions\n", len(existing))
 	remote := map[string]storage.SessionEntry{}
 	for _, e := range existing {
 		remote[e.Key] = e
 	}
 
-	fmt.Println("Scanning local sessions...")
+	log.Println("Scanning local sessions...")
 	var local []source.Session
 	var warnings []string
 	if sessions, err := source.OpenCodeSessions(); err != nil {
 		warnings = append(warnings, fmt.Sprintf("failed to read OpenCode sessions: %v", err))
 	} else {
-		fmt.Printf("Found %d OpenCode sessions\n", len(sessions))
+		log.Printf("Found %d OpenCode sessions\n", len(sessions))
 		local = append(local, sessions...)
 	}
 	if sessions, err := source.ClaudeCodeSessions(); err != nil {
 		warnings = append(warnings, fmt.Sprintf("failed to read Claude Code sessions: %v", err))
 	} else {
-		fmt.Printf("Found %d Claude Code sessions\n", len(sessions))
+		log.Printf("Found %d Claude Code sessions\n", len(sessions))
 		local = append(local, sessions...)
 	}
 
-	fmt.Printf("Diffing %d local sessions against remote...\n", len(local))
+	log.Printf("Diffing %d local sessions against remote...\n", len(local))
 	var uploaded, skipped int
 	var totalBytes int
 	for i := range local {
@@ -134,7 +135,7 @@ func (s *Shade) Upload(ctx context.Context) (*UploadResult, error) {
 		size := len(data)
 		if entry, exists := remote[key]; exists {
 			if !sess.UpdatedAt.After(entry.LastModified) {
-				fmt.Printf("  skip %s (%s, unchanged)\n", key, FormatBytes(size))
+				log.Printf("  skip %s (%s, unchanged)\n", key, FormatBytes(size))
 				skipped++
 				continue
 			}
@@ -143,7 +144,7 @@ func (s *Shade) Upload(ctx context.Context) (*UploadResult, error) {
 			warnings = append(warnings, fmt.Sprintf("failed to upload %s: %v", sess.SessionID, err))
 			continue
 		}
-		fmt.Printf("  upload %s (%s)\n", key, FormatBytes(size))
+		log.Printf("  upload %s (%s)\n", key, FormatBytes(size))
 		uploaded++
 		totalBytes += size
 	}
