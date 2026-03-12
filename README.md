@@ -21,16 +21,18 @@ models or prompts (`dream --learn`) without re-processing all your memories.
 **Inspect** prints your current skills so you can see what your shade has learned. Use
 `inspect --diff` to get an LLM-generated summary of what changed since the last dream.
 
-**Listen** starts an MCP server that exposes a single tool: **ask**. An agent sends a question and
-gets back guidance shaped by your skills. Each call is stateless, a one-shot interaction with no
-session history or persistence.
+**Advise** asks your shade a question and gets back guidance shaped by your skills. Available both as
+a CLI command and as an MCP tool (via `listen`). Each call is stateless, a one-shot interaction with
+no session history or persistence.
 
-## How ask works
+**Listen** starts an MCP server that exposes the **advise** tool so agents can query your shade
+programmatically.
 
-When an agent asks a question, the shade looks through its skills to find what's relevant, reads
-them, and responds with guidance shaped by your patterns. It may pull in multiple skills across
-several rounds of reasoning, but all of that happens internally. The agent only sees the final
-answer.
+## How advise works
+
+When you ask a question, the shade looks through its skills to find what's relevant, reads them, and
+responds with guidance shaped by your patterns. It may pull in multiple skills across several rounds
+of reasoning, but all of that happens internally. You only see the final answer.
 
 Each call is stateless. The shade has no memory of previous questions and no conversation history.
 It knows what it's learned from dreaming and nothing else. If it doesn't have a relevant skill, it
@@ -47,6 +49,7 @@ shade dream             # distill skills from memories
 shade dream --learn     # re-synthesize skills from existing reflections
 shade inspect           # print all skills
 shade inspect --diff    # summarize what changed since the last dream
+shade advise "question" # ask your shade a question
 shade listen            # start the MCP server
 ```
 
