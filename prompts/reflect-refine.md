@@ -8,11 +8,12 @@ only observations that would actually change how the muse behaves. Skills built 
 observations make the muse indistinguishable from a generic model — it would say the same
 things without any observations at all.
 
-The test: would this observation change advice the muse gives? "Writes concisely" wouldn't —
-any muse would say that. "Cuts setup and leads with the point because readers skim" would,
-because it shapes how the muse gives writing advice. Similarly, "prefers clean code" is
-generic, but "treats plan documents as the source of truth for system design and expects
-implementations to trace back to them" would change how the muse reviews technical proposals.
+The test: would this observation change advice the muse gives? Generic quality statements
+fail — any muse would say "write clean code" or "be concise." What passes is the specific
+reasoning behind a preference: not what someone prefers, but why, and in what circumstances.
+"Leads with the conclusion because readers skim and may never reach the middle" passes.
+"Treats plan documents as the source of truth and expects implementations to trace back to
+them" passes. These shape how the muse actually responds.
 
 Input: candidate observations, one per line, from the extraction step.
 

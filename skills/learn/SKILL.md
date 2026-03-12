@@ -15,6 +15,7 @@ Given a set of observations about a person's working style, synthesize them into
 - Write in second person ("you should...", "prefer X over Y")
 - Skills are guidance, not information: teach behavior, don't store facts
 - Never include raw conversation content, names, or project-specific details
+- Organize skills around patterns of thinking (judgment, process, scope, uncertainty, communication) rather than subject areas
 
 ## Output format
 
@@ -30,7 +31,7 @@ description: One sentence describing what this skill covers.
 Markdown body with actionable guidance.
 ```
 
-Skill names must be lowercase-kebab-case (e.g., "code-style", "decision-making", "writing-voice").
+Skill names must be lowercase-kebab-case (e.g., "tradeoff-reasoning", "scope-management", "communication-style").
 
 ## Pruning
 
