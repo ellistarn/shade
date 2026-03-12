@@ -29,7 +29,11 @@ func newUploadCmd() *cobra.Command {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Found %d local sessions\n", result.Total)
-			fmt.Fprintf(cmd.OutOrStdout(), "Uploaded %d sessions (%d unchanged, %s transferred)\n", result.Uploaded, result.Skipped, shade.FormatBytes(result.Bytes))
+			if result.Uploaded > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Uploaded %d sessions (%s transferred, %d unchanged)\n", result.Uploaded, shade.FormatBytes(result.Bytes), result.Skipped)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "All %d sessions unchanged\n", result.Skipped)
+			}
 			return nil
 		},
 	}
