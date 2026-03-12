@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -89,6 +90,7 @@ func (m *mockStore) PutSkill(_ context.Context, name, content string) error {
 // call count rather than prompt content: the last call in a batch is the learn
 // call, all others are reflect calls.
 type mockLLM struct {
+	mu              sync.Mutex
 	reflectResponse string
 	learnResponse   string
 	calls           []llmCall
@@ -102,7 +104,9 @@ type llmCall struct {
 }
 
 func (m *mockLLM) Converse(_ context.Context, system, user string) (string, bedrock.Usage, error) {
+	m.mu.Lock()
 	m.calls = append(m.calls, llmCall{system: system, user: user})
+	m.mu.Unlock()
 	usage := bedrock.Usage{InputTokens: 100, OutputTokens: 50}
 	n := int(m.callCount.Add(1))
 	// The learn call is the last one (after all reflect calls)

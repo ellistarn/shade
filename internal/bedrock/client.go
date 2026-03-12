@@ -104,7 +104,7 @@ func NewClient(ctx context.Context) (*Client, error) {
 	if model == "" {
 		model = defaultModel
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	refillCtx, cancel := context.WithCancel(context.Background())
 	c := &Client{
 		runtime:  bedrockruntime.NewFromConfig(cfg),
 		model:    model,
@@ -112,7 +112,7 @@ func NewClient(ctx context.Context) (*Client, error) {
 		throttle: make(chan struct{}, requestsPerSec),
 		cancel:   cancel,
 	}
-	go c.refillTokens(ctx)
+	go c.refillTokens(refillCtx)
 	return c, nil
 }
 
