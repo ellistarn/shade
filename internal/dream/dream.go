@@ -41,8 +41,8 @@ type Result struct {
 
 // Options configures a dream run.
 type Options struct {
-	// Reprocess ignores persisted reflections and re-reflects all memories.
-	Reprocess bool
+	// Reflect ignores persisted reflections and re-reflects all memories.
+	Reflect bool
 	// Limit caps how many memories to process (0 means no limit).
 	Limit int
 }
@@ -69,7 +69,7 @@ func Run(ctx context.Context, store Store, client LLM, opts Options) (*Result, e
 	}
 
 	// If reprocessing, clear all existing reflections
-	if opts.Reprocess {
+	if opts.Reflect {
 		log.Println("Reprocessing all memories (clearing existing reflections)")
 		if err := store.DeletePrefix(ctx, "dream/reflections/"); err != nil {
 			return nil, fmt.Errorf("failed to clear reflections: %w", err)
@@ -205,9 +205,9 @@ func Run(ctx context.Context, store Store, client LLM, opts Options) (*Result, e
 	}, nil
 }
 
-// Relearn re-runs only the learn phase using persisted reflections.
+// LearnOnly re-runs only the learn phase using persisted reflections.
 // Use this to re-synthesize skills with improved techniques without re-reflecting.
-func Relearn(ctx context.Context, store Store, client LLM) (*Result, error) {
+func LearnOnly(ctx context.Context, store Store, client LLM) (*Result, error) {
 	allReflections, err := loadAllReflections(ctx, store)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load reflections: %w", err)

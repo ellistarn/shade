@@ -251,7 +251,7 @@ func TestDreamPipelineEmptyConversation(t *testing.T) {
 	}
 }
 
-func TestDreamPipelineReprocess(t *testing.T) {
+func TestDreamPipelineReflect(t *testing.T) {
 	store := newMockStore()
 	store.addSession("test", "sess-1", time.Now(), []source.Message{
 		{Role: "user", Content: "hello"},
@@ -277,7 +277,7 @@ Content.`,
 
 	// With Reprocess, it should process again even though state would normally prune it
 	llm.calls = nil
-	result, err := dream.Run(context.Background(), store, llm, dream.Options{Reprocess: true})
+	result, err := dream.Run(context.Background(), store, llm, dream.Options{Reflect: true})
 	if err != nil {
 		t.Fatalf("reprocess Run() error: %v", err)
 	}
