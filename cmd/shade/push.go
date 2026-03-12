@@ -8,10 +8,10 @@ import (
 	"github.com/ellistarn/shade/internal/shade"
 )
 
-func newUploadCmd() *cobra.Command {
+func newPushCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "upload",
-		Short: "Sync memories to storage",
+		Use:   "push",
+		Short: "Push memories to storage",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireBucket(); err != nil {
 				return err

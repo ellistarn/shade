@@ -42,7 +42,7 @@ says so.
 export SHADE_BUCKET=$USER-shade
 export SHADE_MODEL=claude-sonnet-4-20250514
 
-shade upload    # sync memories to storage
+shade push      # push memories to storage
 shade dream     # distill skills from memories
 shade relearn   # re-synthesize skills from existing reflections
 shade listen    # start the MCP server
