@@ -292,3 +292,48 @@ func TestAskMultipleSkills(t *testing.T) {
 		t.Errorf("second call messages = %d, want 3", runtime.calls[1].messages)
 	}
 }
+
+func TestAskMultiRoundToolUse(t *testing.T) {
+	s3Client := &mockS3{skills: map[string]string{
+		"skills/error-handling/SKILL.md": fmt.Sprintf(skillFileTemplate,
+			"Error Handling", "Error return patterns.", "Wrap errors with context. See also: logging."),
+		"skills/logging/SKILL.md": fmt.Sprintf(skillFileTemplate,
+			"Logging", "Logging conventions.", "Use structured logging with slog."),
+	}}
+
+	// Round 1: LLM reads error-handling
+	// Round 2: after seeing "see also: logging", LLM reads logging
+	// Round 3: LLM gives final answer
+	runtime := &mockRuntime{responses: []bedrockruntime.ConverseOutput{
+		toolUseResponse("tool-1", "error-handling"),
+		toolUseResponse("tool-2", "logging"),
+		textResponse("Wrap errors with context and use structured logging."),
+	}}
+
+	ctx := context.Background()
+	bedrockClient := bedrock.NewClientWithRuntime(ctx, runtime)
+	s := shade.NewForTest(s3Client, bedrockClient, "test-bucket")
+
+	answer, err := s.Ask(ctx, "how should I handle errors?")
+	if err != nil {
+		t.Fatalf("Ask() error: %v", err)
+	}
+	if answer != "Wrap errors with context and use structured logging." {
+		t.Errorf("answer = %q", answer)
+	}
+
+	// 3 Bedrock calls: initial + resolve error-handling + resolve logging + final answer
+	if len(runtime.calls) != 3 {
+		t.Fatalf("Bedrock calls = %d, want 3", len(runtime.calls))
+	}
+	// Message counts grow: 1, 3, 5 (each round adds assistant + user messages)
+	if runtime.calls[0].messages != 1 {
+		t.Errorf("call 0 messages = %d, want 1", runtime.calls[0].messages)
+	}
+	if runtime.calls[1].messages != 3 {
+		t.Errorf("call 1 messages = %d, want 3", runtime.calls[1].messages)
+	}
+	if runtime.calls[2].messages != 5 {
+		t.Errorf("call 2 messages = %d, want 5", runtime.calls[2].messages)
+	}
+}

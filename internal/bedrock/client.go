@@ -178,9 +178,12 @@ func (c *Client) Converse(ctx context.Context, system, user string) (string, Usa
 	return "", Usage{}, fmt.Errorf("throttled after %d retries: %w", maxRetries, lastErr)
 }
 
-// ConverseWithTools sends a message and handles one round of tool use.
-// If the LLM requests tools, the handler is called for each, and results are
-// sent back in a follow-up call. Capped at one tool-use round.
+const maxToolRounds = 3
+
+// ConverseWithTools sends a message and handles tool use in a loop.
+// If the LLM requests tools, the handler is called for each, results are
+// sent back, and the LLM can request more tools or give a final answer.
+// Capped at maxToolRounds to prevent runaway loops.
 func (c *Client) ConverseWithTools(ctx context.Context, system, user string, toolConfig *types.ToolConfiguration, handler ToolHandler) (string, Usage, error) {
 	messages := []types.Message{
 		{
@@ -189,26 +192,40 @@ func (c *Client) ConverseWithTools(ctx context.Context, system, user string, too
 		},
 	}
 
-	text, usage, stop, assistantContent, err := c.converseRaw(ctx, system, messages, toolConfig)
-	if err != nil {
-		return text, usage, err
-	}
-	if stop != types.StopReasonToolUse {
-		return text, usage, nil
-	}
+	var totalUsage Usage
+	for range maxToolRounds {
+		text, usage, stop, assistantContent, err := c.converseRaw(ctx, system, messages, toolConfig)
+		totalUsage = totalUsage.Add(usage)
+		if err != nil {
+			return text, totalUsage, err
+		}
+		if stop != types.StopReasonToolUse {
+			return text, totalUsage, nil
+		}
 
-	// Resolve tool calls
-	messages = append(messages, types.Message{
-		Role:    types.ConversationRoleAssistant,
-		Content: assistantContent,
-	})
-	var toolResults []types.ContentBlock
-	for _, block := range assistantContent {
+		// Resolve tool calls and continue the loop
+		messages = append(messages, types.Message{
+			Role:    types.ConversationRoleAssistant,
+			Content: assistantContent,
+		})
+		toolResults := resolveToolCalls(assistantContent, handler)
+		messages = append(messages, types.Message{
+			Role:    types.ConversationRoleUser,
+			Content: toolResults,
+		})
+	}
+	// If we exhaust all rounds, make one final call without tools to force a text response
+	text, usage, _, _, err := c.converseRaw(ctx, system, messages, nil)
+	return text, totalUsage.Add(usage), err
+}
+
+func resolveToolCalls(content []types.ContentBlock, handler ToolHandler) []types.ContentBlock {
+	var results []types.ContentBlock
+	for _, block := range content {
 		tu, ok := block.(*types.ContentBlockMemberToolUse)
 		if !ok {
 			continue
 		}
-		// Extract input from the document
 		var input map[string]any
 		if tu.Value.Input != nil {
 			if err := tu.Value.Input.UnmarshalSmithyDocument(&input); err != nil {
@@ -217,7 +234,7 @@ func (c *Client) ConverseWithTools(ctx context.Context, system, user string, too
 		}
 		result, err := handler(aws.ToString(tu.Value.Name), input)
 		if err != nil {
-			toolResults = append(toolResults, &types.ContentBlockMemberToolResult{
+			results = append(results, &types.ContentBlockMemberToolResult{
 				Value: types.ToolResultBlock{
 					ToolUseId: tu.Value.ToolUseId,
 					Status:    types.ToolResultStatusError,
@@ -226,7 +243,7 @@ func (c *Client) ConverseWithTools(ctx context.Context, system, user string, too
 			})
 			continue
 		}
-		toolResults = append(toolResults, &types.ContentBlockMemberToolResult{
+		results = append(results, &types.ContentBlockMemberToolResult{
 			Value: types.ToolResultBlock{
 				ToolUseId: tu.Value.ToolUseId,
 				Status:    types.ToolResultStatusSuccess,
@@ -234,13 +251,7 @@ func (c *Client) ConverseWithTools(ctx context.Context, system, user string, too
 			},
 		})
 	}
-	messages = append(messages, types.Message{
-		Role:    types.ConversationRoleUser,
-		Content: toolResults,
-	})
-
-	text2, usage2, _, _, err := c.converseRaw(ctx, system, messages, toolConfig)
-	return text2, usage.Add(usage2), err
+	return results
 }
 
 func (c *Client) converseRaw(ctx context.Context, system string, messages []types.Message, toolConfig *types.ToolConfiguration) (string, Usage, types.StopReason, []types.ContentBlock, error) {
