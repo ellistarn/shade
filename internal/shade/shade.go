@@ -194,7 +194,7 @@ func (s *Shade) Upload(ctx context.Context) (*UploadResult, error) {
 		size := len(data)
 		if entry, exists := remote[key]; exists {
 			if !sess.UpdatedAt.After(entry.LastModified) {
-				log.Printf("  skip (%s, unchanged) %s\n", FormatBytes(size), key)
+				log.Printf("  skip (unchanged) %s\n", key)
 				skipped++
 				continue
 			}
