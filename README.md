@@ -1,7 +1,7 @@
 # Muse
 
 A muse is the distilled essence of how you think. It absorbs your memories from agent interactions,
-distills them into skills, and uses those skills to when asked questions.
+distills them into skills, and approximates your unique thought processes when asked questions.
 
 ## How it works
 
