@@ -1,9 +1,10 @@
-package e2e
+package dream_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 	"github.com/ellistarn/shade/internal/storage"
 )
 
-// mockStore implements dream.Store with in-memory state.
+// mockStore implements dream.Store with in-memory state, including JSON persistence.
 type mockStore struct {
 	sessions []storage.SessionEntry
 	data     map[string]*source.Session
@@ -58,10 +59,19 @@ func (m *mockStore) GetSession(_ context.Context, src, sessionID string) (*sourc
 }
 
 func (m *mockStore) GetJSON(_ context.Context, key string, v any) error {
-	return fmt.Errorf("not found: %s", key) // always fresh start
+	data, ok := m.json[key]
+	if !ok {
+		return fmt.Errorf("not found: %s", key)
+	}
+	return json.Unmarshal(data, v)
 }
 
 func (m *mockStore) PutJSON(_ context.Context, key string, v any) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	m.json[key] = data
 	return nil
 }
 
@@ -75,11 +85,15 @@ func (m *mockStore) PutSkill(_ context.Context, name, content string) error {
 	return nil
 }
 
-// mockLLM implements dream.LLM with canned responses.
+// mockLLM implements dream.LLM with canned responses. It dispatches based on
+// call count rather than prompt content: the last call in a batch is the learn
+// call, all others are reflect calls.
 type mockLLM struct {
 	reflectResponse string
 	learnResponse   string
 	calls           []llmCall
+	callCount       atomic.Int32
+	totalExpected   int // set to len(pending) + 1 for reflect+learn
 }
 
 type llmCall struct {
@@ -90,7 +104,9 @@ type llmCall struct {
 func (m *mockLLM) Converse(_ context.Context, system, user string) (string, bedrock.Usage, error) {
 	m.calls = append(m.calls, llmCall{system: system, user: user})
 	usage := bedrock.Usage{InputTokens: 100, OutputTokens: 50}
-	if strings.Contains(system, "compressing observations") {
+	n := int(m.callCount.Add(1))
+	// The learn call is the last one (after all reflect calls)
+	if m.totalExpected > 0 && n == m.totalExpected {
 		return m.learnResponse, usage, nil
 	}
 	return m.reflectResponse, usage, nil
@@ -124,6 +140,7 @@ description: How to write commits.
 ---
 
 Keep commit messages plain text, no emojis.`,
+		totalExpected: 3, // 2 reflect + 1 learn
 	}
 
 	result, err := dream.Run(context.Background(), store, llm, dream.Options{})
@@ -200,6 +217,7 @@ description: Test skill.
 ---
 
 Content here.`,
+		totalExpected: 3, // 2 reflect + 1 learn
 	}
 
 	result, err := dream.Run(context.Background(), store, llm, dream.Options{Limit: 2})
@@ -235,6 +253,52 @@ func TestDreamPipelineEmptyConversation(t *testing.T) {
 	}
 }
 
+func TestDreamPipelinePruning(t *testing.T) {
+	store := newMockStore()
+	store.addSession("test", "sess-1", time.Now(), []source.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "hi"},
+	})
+
+	llm := &mockLLM{
+		reflectResponse: "- observation",
+		learnResponse: `=== SKILL: test ===
+---
+name: Test
+description: A test skill.
+---
+
+Content.`,
+		totalExpected: 2, // 1 reflect + 1 learn
+	}
+
+	// First run processes the session
+	result, err := dream.Run(context.Background(), store, llm, dream.Options{})
+	if err != nil {
+		t.Fatalf("first Run() error: %v", err)
+	}
+	if result.Processed != 1 {
+		t.Errorf("first run: Processed = %d, want 1", result.Processed)
+	}
+
+	// Second run should prune (state was persisted by first run)
+	llm.calls = nil
+	llm.callCount.Store(0)
+	result, err = dream.Run(context.Background(), store, llm, dream.Options{})
+	if err != nil {
+		t.Fatalf("second Run() error: %v", err)
+	}
+	if result.Pruned != 1 {
+		t.Errorf("second run: Pruned = %d, want 1", result.Pruned)
+	}
+	if result.Processed != 0 {
+		t.Errorf("second run: Processed = %d, want 0", result.Processed)
+	}
+	if len(llm.calls) != 0 {
+		t.Errorf("second run: LLM calls = %d, want 0", len(llm.calls))
+	}
+}
+
 func TestDreamPipelineReprocess(t *testing.T) {
 	store := newMockStore()
 	store.addSession("test", "sess-1", time.Now(), []source.Message{
@@ -251,6 +315,7 @@ description: A test skill.
 ---
 
 Content.`,
+		totalExpected: 2, // 1 reflect + 1 learn
 	}
 
 	// First run
@@ -261,6 +326,7 @@ Content.`,
 
 	// With Reprocess, it should process again even though state would normally prune it
 	llm.calls = nil
+	llm.callCount.Store(0)
 	result, err := dream.Run(context.Background(), store, llm, dream.Options{Reprocess: true})
 	if err != nil {
 		t.Fatalf("reprocess Run() error: %v", err)

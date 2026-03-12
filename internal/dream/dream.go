@@ -101,12 +101,22 @@ func Run(ctx context.Context, store Store, llm LLM, opts Options) (*Result, erro
 		return &Result{Pruned: pruned, Skills: 0}, nil
 	}
 
-	// Estimate tokens: load each session and estimate the input size
-	log.Println("Estimating token usage...")
-	var totalEstimate int
-	for _, entry := range pending {
+	// Load sessions once upfront for both estimation and reflect
+	log.Println("Loading sessions...")
+	sessions := make([]*source.Session, len(pending))
+	for i, entry := range pending {
 		session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
 		if err != nil {
+			continue
+		}
+		sessions[i] = session
+	}
+
+	// Estimate tokens from loaded sessions
+	log.Println("Estimating token usage...")
+	var totalEstimate int
+	for _, session := range sessions {
+		if session == nil {
 			continue
 		}
 		conversation := formatSession(session)
@@ -133,9 +143,9 @@ func Run(ctx context.Context, store Store, llm LLM, opts Options) (*Result, erro
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
-			if err != nil {
-				results[i] = mapResult{key: entry.Key, err: err}
+			session := sessions[i]
+			if session == nil {
+				results[i] = mapResult{key: entry.Key, err: fmt.Errorf("failed to load session")}
 				n := completed.Add(1)
 				log.Printf("  [%d/%d] %s (error)\n", n, len(pending), entry.Key)
 				return
@@ -215,7 +225,14 @@ func reflect(ctx context.Context, llm LLM, session *source.Session) (string, bed
 	if conversation == "" {
 		return "", bedrock.Usage{}, nil
 	}
-	return llm.Converse(ctx, reflectPrompt, conversation)
+	obs, usage, err := llm.Converse(ctx, reflectPrompt, conversation)
+	if err != nil {
+		return "", usage, err
+	}
+	if strings.TrimSpace(obs) == "NO_OBSERVATIONS" {
+		return "", usage, nil
+	}
+	return obs, usage, nil
 }
 
 func learn(ctx context.Context, llm LLM, observations []string) (map[string]string, bedrock.Usage, error) {
@@ -259,34 +276,20 @@ func ParseSkillsResponse(raw string) (map[string]string, error) {
 	}
 
 	skills := map[string]string{}
-	sections := strings.Split(cleaned, "=== SKILL:")
+	const delimiter = "=== SKILL:"
+	sections := strings.Split(cleaned, delimiter)
 	for _, section := range sections[1:] { // skip content before first delimiter
-		// Find the closing "===" with flexible whitespace handling
-		endHeader := -1
-		for i := 0; i < len(section); i++ {
-			if i+3 <= len(section) && section[i:i+3] == "===" && (i == 0 || section[i-1] == ' ') {
-				// Check it's the closing delimiter, not part of content
-				rest := section[i+3:]
-				trimmed := strings.TrimLeft(rest, " \t")
-				if len(trimmed) == 0 || trimmed[0] == '\n' || trimmed[0] == '\r' {
-					endHeader = i
-					// Advance past the === and the newline
-					skipTo := i + 3 + (len(rest) - len(trimmed))
-					if skipTo < len(section) && (section[skipTo] == '\n' || section[skipTo] == '\r') {
-						skipTo++
-					}
-					name := strings.TrimSpace(section[:endHeader])
-					content := strings.TrimSpace(section[skipTo:])
-					if name != "" && content != "" {
-						skills[name] = content
-					}
-					break
-				}
-			}
+		name, body, ok := strings.Cut(section, "===")
+		if !ok {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		body = strings.TrimSpace(body)
+		if name != "" && body != "" {
+			skills[name] = body
 		}
 	}
 	if len(skills) == 0 {
-		// Log a snippet of the raw output to aid debugging
 		snippet := raw
 		if len(snippet) > 500 {
 			snippet = snippet[:500] + "..."

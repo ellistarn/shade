@@ -19,7 +19,7 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&bucket, "bucket", os.Getenv("SHADE_BUCKET"), "S3 bucket name (or set SHADE_BUCKET)")
 	cmd.AddCommand(newUploadCmd())
 	cmd.AddCommand(newDreamCmd())
-	cmd.AddCommand(newListenCmd())
+	cmd.AddCommand(newMCPCmd())
 	cmd.AddCommand(newAskCmd())
 	return cmd
 }

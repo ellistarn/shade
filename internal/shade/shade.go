@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-
 	"github.com/ellistarn/shade/internal/bedrock"
 	"github.com/ellistarn/shade/internal/log"
 	"github.com/ellistarn/shade/internal/skill"
@@ -28,7 +25,6 @@ type UploadResult struct {
 // Shade holds the state needed for all operations.
 type Shade struct {
 	storage *storage.Client
-	s3      *s3.Client
 	bedrock *bedrock.Client
 	bucket  string
 }
@@ -38,17 +34,12 @@ func New(ctx context.Context, bucket string) (*Shade, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage client: %w", err)
 	}
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
 	bedrockClient, err := bedrock.NewClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bedrock client: %w", err)
 	}
 	return &Shade{
 		storage: storageClient,
-		s3:      s3.NewFromConfig(cfg),
 		bedrock: bedrockClient,
 		bucket:  bucket,
 	}, nil
@@ -72,7 +63,7 @@ If you don't have a relevant skill for a question, say so honestly rather than g
 
 // Ask answers a question using the shade's distilled skills.
 func (s *Shade) Ask(ctx context.Context, question string) (string, error) {
-	skills, err := skill.LoadAll(ctx, s.s3, s.bucket)
+	skills, err := skill.LoadAll(ctx, s.storage.S3(), s.storage.Bucket())
 	if err != nil {
 		return "", fmt.Errorf("failed to load skills: %w", err)
 	}

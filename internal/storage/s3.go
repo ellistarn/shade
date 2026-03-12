@@ -21,10 +21,20 @@ type Client struct {
 	bucket string
 }
 
+// S3 returns the underlying S3 client for use by packages that need
+// direct access (e.g., skill.LoadAll).
+func (c *Client) S3() *s3.Client { return c.s3 }
+
+// Bucket returns the bucket name.
+func (c *Client) Bucket() string { return c.bucket }
+
 func NewClient(ctx context.Context, bucket string) (*Client, error) {
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	if cfg.Region == "" {
+		cfg.Region = "us-west-2"
 	}
 	return &Client{
 		s3:     s3.NewFromConfig(cfg),
@@ -164,6 +174,7 @@ func (c *Client) PutSkill(ctx context.Context, name, content string) error {
 }
 
 // DeletePrefix removes all objects under a given S3 prefix.
+// TODO: Use s3.DeleteObjects for batch deletion (up to 1000 keys per call).
 func (c *Client) DeletePrefix(ctx context.Context, prefix string) error {
 	paginator := s3.NewListObjectsV2Paginator(c.s3, &s3.ListObjectsV2Input{
 		Bucket: &c.bucket,

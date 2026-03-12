@@ -35,7 +35,9 @@ func (u Usage) Cost() float64 {
 	return float64(u.InputTokens)*u.inputPricePerToken + float64(u.OutputTokens)*u.outputPricePerToken
 }
 
-// Add combines two Usage values, preserving pricing from whichever has it.
+// Add combines two Usage values. Pricing is taken from the receiver if set,
+// otherwise from other. When mixing models with different pricing, the
+// receiver's pricing wins and the other's is silently dropped.
 func (u Usage) Add(other Usage) Usage {
 	result := Usage{
 		InputTokens:  u.InputTokens + other.InputTokens,
@@ -80,6 +82,7 @@ type Client struct {
 	model    string
 	pricing  modelPricing
 	throttle chan struct{} // token bucket: one token per request slot
+	cancel   context.CancelFunc
 }
 
 const (
@@ -90,23 +93,32 @@ const (
 )
 
 func NewClient(ctx context.Context) (*Client, error) {
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	if cfg.Region == "" {
+		cfg.Region = "us-west-2"
 	}
 	model := os.Getenv("SHADE_MODEL")
 	if model == "" {
 		model = defaultModel
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	c := &Client{
 		runtime:  bedrockruntime.NewFromConfig(cfg),
 		model:    model,
 		pricing:  lookupPricing(model),
 		throttle: make(chan struct{}, requestsPerSec),
+		cancel:   cancel,
 	}
-	// Start the token refiller: adds one request token per 1/requestsPerSec interval.
 	go c.refillTokens(ctx)
 	return c, nil
+}
+
+// Close stops the background token refill goroutine.
+func (c *Client) Close() {
+	c.cancel()
 }
 
 // refillTokens adds request tokens at a steady rate.

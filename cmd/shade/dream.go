@@ -29,6 +29,7 @@ func newDreamCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer llm.Close()
 			result, err := dream.Run(ctx, store, llm, dream.Options{Reprocess: reprocess, Limit: limit})
 			if err != nil {
 				return err
@@ -43,6 +44,6 @@ func newDreamCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&reprocess, "reprocess", false, "ignore saved state and reprocess all memories")
-	cmd.Flags().IntVar(&limit, "limit", 100, "max memories to process (0 = no limit)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "max memories to process (default: unlimited)")
 	return cmd
 }

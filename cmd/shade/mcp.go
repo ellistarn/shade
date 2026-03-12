@@ -8,7 +8,7 @@ import (
 	"github.com/ellistarn/shade/internal/shade"
 )
 
-func newListenCmd() *cobra.Command {
+func newMCPCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "listen",
 		Short: "Start the shade MCP server",
