@@ -14,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
@@ -289,12 +288,6 @@ func (c *Client) converseRawOnce(ctx context.Context, system string, messages []
 		InferenceConfig: &types.InferenceConfiguration{
 			MaxTokens: aws.Int32(64000),
 		},
-		AdditionalModelRequestFields: document.NewLazyDocument(map[string]any{
-			"thinking": map[string]any{
-				"type":   "adaptive",
-				"effort": "medium",
-			},
-		}),
 	}
 	if toolConfig != nil {
 		input.ToolConfig = toolConfig
