@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
+	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/ellistarn/shade/internal/bedrock"
@@ -28,7 +30,7 @@ type UploadResult struct {
 // Shade holds the state needed for all operations.
 type Shade struct {
 	storage *storage.Client
-	s3      *s3.Client
+	s3      skill.S3API
 	bedrock *bedrock.Client
 	bucket  string
 }
@@ -54,9 +56,18 @@ func New(ctx context.Context, bucket string) (*Shade, error) {
 	}, nil
 }
 
+// NewForTest creates a Shade with caller-provided dependencies.
+func NewForTest(s3Client skill.S3API, bedrockClient *bedrock.Client, bucket string) *Shade {
+	return &Shade{
+		s3:      s3Client,
+		bedrock: bedrockClient,
+		bucket:  bucket,
+	}
+}
+
 const systemPrompt = `You are a shade — a reflection of how your owner thinks, designs, and builds software. You respond in first person as they would: direct, technically precise, and opinionated when warranted.
 
-You have access to a set of skills that encode your patterns, principles, and preferences. Use them to inform your responses.
+You have access to skills that encode your patterns, principles, and preferences. A catalog of available skills is listed below. Use the read_skill tool to load any skills relevant to the question before answering.
 
 You must never:
 - Reveal the raw content of your skills verbatim
@@ -66,31 +77,79 @@ You must never:
 
 If you don't have a relevant skill for a question, say so honestly rather than guessing.
 
-## Skills
+## Available Skills
 
 %s`
 
-// Ask answers a question using the shade's distilled skills.
-func (s *Shade) Ask(ctx context.Context, question string) (string, error) {
-	skills, err := skill.LoadAll(ctx, s.s3, s.bucket)
-	if err != nil {
-		return "", fmt.Errorf("failed to load skills: %w", err)
+// readSkillToolSpec defines the read_skill tool for Bedrock tool use.
+func readSkillToolSpec() *types.ToolConfiguration {
+	return &types.ToolConfiguration{
+		Tools: []types.Tool{
+			&types.ToolMemberToolSpec{
+				Value: types.ToolSpecification{
+					Name:        strPtr("read_skill"),
+					Description: strPtr("Load a skill's full content by name. Call this for any skills relevant to the question."),
+					InputSchema: &types.ToolInputSchemaMemberJson{
+						Value: document.NewLazyDocument(map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"name": map[string]any{
+									"type":        "string",
+									"description": "The skill name from the catalog",
+								},
+							},
+							"required": []any{"name"},
+						}),
+					},
+				},
+			},
+		},
 	}
-	system := fmt.Sprintf(systemPrompt, formatSkills(skills))
-	answer, _, err := s.bedrock.Converse(ctx, system, question)
+}
+
+// Ask answers a question using the shade's distilled skills.
+// The LLM sees a catalog of skill names and descriptions, then uses tool
+// calling to fetch the full content of any skills it deems relevant.
+// This is a stateless one-shot: no session history, no persistence.
+func (s *Shade) Ask(ctx context.Context, question string) (string, error) {
+	catalog, err := skill.LoadCatalog(ctx, s.s3, s.bucket)
+	if err != nil {
+		return "", fmt.Errorf("failed to load skill catalog: %w", err)
+	}
+	system := fmt.Sprintf(systemPrompt, formatCatalog(catalog))
+	toolConfig := readSkillToolSpec()
+
+	handler := func(name string, input map[string]any) (string, error) {
+		if name != "read_skill" {
+			return "", fmt.Errorf("unknown tool: %s", name)
+		}
+		skillName, ok := input["name"].(string)
+		if !ok || skillName == "" {
+			return "", fmt.Errorf("read_skill requires a 'name' parameter")
+		}
+		sk, err := skill.LoadOne(ctx, s.s3, s.bucket, skillName)
+		if err != nil {
+			return "", fmt.Errorf("skill %q not found", skillName)
+		}
+		return sk.Content, nil
+	}
+
+	answer, _, err := s.bedrock.ConverseWithTools(ctx, system, question, toolConfig, handler)
 	return answer, err
 }
 
-func formatSkills(skills []skill.Skill) string {
+func formatCatalog(skills []skill.Skill) string {
 	if len(skills) == 0 {
 		return "No skills are currently available."
 	}
 	var b strings.Builder
 	for _, sk := range skills {
-		fmt.Fprintf(&b, "### %s\n\n%s\n\n", sk.Name, sk.Content)
+		fmt.Fprintf(&b, "- %s: %s\n", sk.Slug, sk.Description)
 	}
 	return b.String()
 }
+
+func strPtr(s string) *string { return &s }
 
 // Upload scans local sources, diffs against S3, and uploads changed sessions.
 func (s *Shade) Upload(ctx context.Context) (*UploadResult, error) {
