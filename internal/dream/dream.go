@@ -169,10 +169,8 @@ func Run(ctx context.Context, store Store, reflectLLM, learnLLM LLM, opts Option
 				continue
 			}
 			reflectUsage = reflectUsage.Add(r.usage)
-			if r.observations != "" {
-				if err := store.PutReflection(ctx, r.key, r.observations); err != nil {
-					warnings = append(warnings, fmt.Sprintf("failed to save reflection for %s: %v", r.key, err))
-				}
+			if err := store.PutReflection(ctx, r.key, r.observations); err != nil {
+				warnings = append(warnings, fmt.Sprintf("failed to save reflection for %s: %v", r.key, err))
 			}
 		}
 		log.Printf("Reflected on %d memories ($%.4f)\n", len(pending)-len(warnings), reflectUsage.Cost())
