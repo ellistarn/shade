@@ -16,6 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+
+	"github.com/ellistarn/shade/internal/log"
 )
 
 const defaultModel = "us.anthropic.claude-opus-4-6-v1"
@@ -145,7 +147,7 @@ func (c *Client) Converse(ctx context.Context, system, user string) (string, Usa
 		}
 		lastErr = err
 		backoff := backoffDuration(attempt)
-		fmt.Printf("  throttled (attempt %d/%d), backing off %s\n", attempt+1, maxRetries, backoff.Round(time.Millisecond))
+		log.Printf("  throttled (attempt %d/%d), backing off %s\n", attempt+1, maxRetries, backoff.Round(time.Millisecond))
 		select {
 		case <-ctx.Done():
 			return "", Usage{}, ctx.Err()
@@ -170,7 +172,7 @@ func (c *Client) converse(ctx context.Context, system, user string) (string, Usa
 			},
 		},
 		InferenceConfig: &types.InferenceConfiguration{
-			MaxTokens: aws.Int32(16000),
+			MaxTokens: aws.Int32(64000),
 		},
 		// Adaptive thinking for Opus 4.6: lets Claude decide when and how much to think.
 		// https://docs.aws.amazon.com/bedrock/latest/userguide/claude-messages-adaptive-thinking.html
@@ -195,7 +197,11 @@ func (c *Client) converse(ctx context.Context, system, user string) (string, Usa
 	}
 	usage.inputPricePerToken = c.pricing.inputPerToken
 	usage.outputPricePerToken = c.pricing.outputPerToken
-	return extractText(out), usage, nil
+	text := extractText(out)
+	if out.StopReason == types.StopReasonMaxTokens {
+		return text, usage, fmt.Errorf("response truncated: hit max token limit (%d output tokens)", usage.OutputTokens)
+	}
+	return text, usage, nil
 }
 
 // isThrottling checks whether the error is a Bedrock throttling (429) response.
