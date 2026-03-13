@@ -12,11 +12,10 @@ func newListenCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "listen",
 		Short: "Start the muse MCP server",
-		Long: `Starts an MCP server over stdio that exposes an "ask" tool. Agents connected
-to this server can query your muse programmatically.
+		Long: `Starts an MCP server over stdio that exposes an "ask" tool so agents can
+query your muse programmatically.
 
-Add this to your agent's MCP config (name the server after whoever's muse
-it is):
+Add this to your agent's MCP config:
 
   {
     "mcpServers": {

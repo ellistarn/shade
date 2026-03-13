@@ -15,12 +15,8 @@ func newAskCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ask [question]",
 		Short: "Ask your muse a question",
-		Long: `Sends a question to your muse and streams the response. Your muse's entire
-soul is included in the system prompt, so the model responds with guidance
-shaped by your patterns.
-
-Each call is stateless — your muse has no memory of previous questions. It
-knows what it learned from dreaming and nothing else. Ask opinionated
+		Long: `Sends a question to your muse and streams the response. Each call is
+stateless — your muse has no memory of previous questions. Ask opinionated
 questions ("Is X a good approach for Y?") rather than factual lookups.`,
 		Example: `  muse ask "Is a monorepo the right call for this project?"
   muse ask "How should I structure error handling in Go?"`,

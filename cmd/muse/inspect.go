@@ -19,9 +19,7 @@ func newInspectCmd() *cobra.Command {
 		Long: `Prints your current soul document to stdout. If no soul exists yet, prompts
 you to run 'muse dream'.
 
-Use --diff to generate an LLM-summarized comparison between the current soul
-and the most recent dream snapshot, showing what was added, removed, or
-revised.`,
+Use --diff to summarize what changed since the last dream.`,
 		Example: `  muse inspect          # print the soul
   muse inspect --diff   # summarize what changed since the last dream`,
 		RunE: func(cmd *cobra.Command, args []string) error {

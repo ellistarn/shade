@@ -20,19 +20,12 @@ func newDreamCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dream",
 		Short: "Distill a soul from memories",
-		Long: `Dreaming is a two-phase process. First, the model reflects on each memory
-individually, focusing on the feedback you give to agents: what you correct,
-reinforce, or redirect. Then it compresses all reflections into a single soul
-document that captures your expertise.
+		Long: `Processes your uploaded memories and distills them into a soul document that
+captures your expertise. Each dream snapshots the previous soul before
+overwriting it.
 
-The soul is guidance, not information — it teaches models how you want things
-done without leaking underlying data. Dreaming is lossy by design, keeping
-what matters and forgetting what doesn't. Each dream snapshots the previous
-soul before overwriting it.
-
-Use --learn to skip reflection and re-distill the soul from existing
-reflections (useful when upgrading to a better model). Use --reflect to
-re-reflect on all memories from scratch.`,
+Use --learn to re-distill the soul from existing reflections without
+reprocessing memories. Use --reflect to reprocess all memories from scratch.`,
 		Example: `  muse dream              # reflect on new memories and distill soul
   muse dream --learn      # re-distill soul from existing reflections
   muse dream --reflect    # re-reflect on all memories from scratch

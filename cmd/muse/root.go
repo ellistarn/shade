@@ -30,18 +30,7 @@ Getting started:
   export MUSE_MODEL=<model-id>     # model override (optional)
   muse push && muse dream && muse inspect
 
-To wire up your muse as an MCP server for agents:
-
-  {
-    "mcpServers": {
-      "<your-name>": {
-        "command": "muse",
-        "args": ["listen"]
-      }
-    }
-  }
-
-See https://github.com/ellistarn/muse for full documentation.`,
+Run "muse listen --help" for MCP server configuration.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
