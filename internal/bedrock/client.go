@@ -178,6 +178,29 @@ func (c *Client) Converse(ctx context.Context, system, user string, opts ...llm.
 	return text, usage, err
 }
 
+// ConverseResult holds the full output from a ConverseMessages call.
+type ConverseResult struct {
+	Text       string
+	Usage      Usage
+	StopReason types.StopReason
+	Content    []types.ContentBlock
+}
+
+// ConverseMessages sends a full message history with optional tool config.
+func (c *Client) ConverseMessages(ctx context.Context, system string, messages []types.Message, toolConfig *types.ToolConfiguration, opts ...llm.ConverseOption) (*ConverseResult, error) {
+	o := llm.Apply(opts)
+	text, usage, stop, content, err := c.converseRaw(ctx, system, messages, toolConfig, o)
+	if err != nil {
+		return nil, err
+	}
+	return &ConverseResult{
+		Text:       text,
+		Usage:      usage,
+		StopReason: stop,
+		Content:    content,
+	}, nil
+}
+
 func (c *Client) converseRaw(ctx context.Context, system string, messages []types.Message, toolConfig *types.ToolConfiguration, opts llm.ConverseOptions) (string, Usage, types.StopReason, []types.ContentBlock, error) {
 	var lastErr error
 	for attempt := range maxRetries {

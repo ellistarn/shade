@@ -24,11 +24,11 @@ func newAskCmd() *cobra.Command {
 				return err
 			}
 			question := strings.Join(args, " ")
-			answer, err := m.Ask(ctx, question)
+			result, err := m.Ask(ctx, muse.AskInput{Question: question})
 			if err != nil {
 				return err
 			}
-			fmt.Println(answer)
+			fmt.Println(result.Response)
 			return nil
 		},
 	}

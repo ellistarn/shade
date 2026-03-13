@@ -15,3 +15,10 @@ Do NOT use your muse for:
 - Yes/no factual questions — it is an advisor, not a database
 
 Ask opinionated questions: "Is X a good approach for Y?" not "What is X?"
+
+The muse has no access to your filesystem, codebase, or conversation history. Include
+relevant content directly in your question — the more context you provide, the better
+the guidance.
+
+The conversation is stateful — the muse remembers previous turns within the same
+session. If it asks for more context, just call ask again with the requested content.

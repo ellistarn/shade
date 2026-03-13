@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
+
 	"github.com/ellistarn/muse/internal/bedrock"
 	"github.com/ellistarn/muse/internal/log"
 	"github.com/ellistarn/muse/internal/source"
@@ -20,11 +22,24 @@ type UploadResult struct {
 	Warnings []string
 }
 
+// AskInput contains the parameters for an Ask call.
+type AskInput struct {
+	Question  string // the user's message
+	SessionID string // if set, continues an existing conversation
+}
+
+// AskResult contains the output from an Ask call.
+type AskResult struct {
+	Response  string // the muse's response text
+	SessionID string // session ID for continuing the conversation
+}
+
 // Muse holds the state needed for all operations.
 type Muse struct {
-	storage *storage.Client
-	bedrock *bedrock.Client
-	soul    string // the full soul document, loaded at init
+	storage  *storage.Client
+	bedrock  *bedrock.Client
+	soul     string // the full soul document, loaded at init
+	sessions *sessionStore
 }
 
 func New(ctx context.Context, bucket string) (*Muse, error) {
@@ -49,33 +64,73 @@ func New(ctx context.Context, bucket string) (*Muse, error) {
 		log.Println("No soul found (run 'muse dream' to generate one)")
 	}
 	return &Muse{
-		storage: storageClient,
-		bedrock: bedrockClient,
-		soul:    soul,
+		storage:  storageClient,
+		bedrock:  bedrockClient,
+		soul:     soul,
+		sessions: newSessionStore(),
 	}, nil
 }
 
 // NewForTest creates a Muse with caller-provided dependencies.
 func NewForTest(bedrockClient *bedrock.Client, soul string) *Muse {
 	return &Muse{
-		bedrock: bedrockClient,
-		soul:    soul,
+		bedrock:  bedrockClient,
+		soul:     soul,
+		sessions: newSessionStore(),
 	}
 }
 
 var systemPrompt = prompts.Muse
 
-// Ask answers a question using the muse's soul document.
-// The soul is included directly in the system prompt — no tool calling,
-// no progressive disclosure. Single-shot stateless interaction.
-func (m *Muse) Ask(ctx context.Context, question string) (string, error) {
-	soul := m.soul
-	if soul == "" {
-		soul = "No soul document available yet. Run 'muse dream' to generate one from memories."
+// Ask handles a conversation turn. If SessionID is set, continues an existing
+// conversation. Otherwise starts a new one.
+func (m *Muse) Ask(ctx context.Context, input AskInput) (*AskResult, error) {
+	var session *Session
+
+	if input.SessionID != "" {
+		// Resume existing conversation
+		s, err := m.sessions.get(input.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		session = s
+		session.Messages = append(session.Messages, types.Message{
+			Role:    types.ConversationRoleUser,
+			Content: []types.ContentBlock{&types.ContentBlockMemberText{Value: input.Question}},
+		})
+	} else {
+		// New conversation
+		soul := m.soul
+		if soul == "" {
+			soul = "No soul document available yet. Run 'muse dream' to generate one from memories."
+		}
+		session = &Session{
+			System: fmt.Sprintf(systemPrompt, soul),
+			Messages: []types.Message{
+				{
+					Role:    types.ConversationRoleUser,
+					Content: []types.ContentBlock{&types.ContentBlockMemberText{Value: input.Question}},
+				},
+			},
+		}
 	}
-	system := fmt.Sprintf(systemPrompt, soul)
-	answer, _, err := m.bedrock.Converse(ctx, system, question)
-	return answer, err
+
+	result, err := m.bedrock.ConverseMessages(ctx, session.System, session.Messages, nil)
+	if err != nil {
+		return nil, fmt.Errorf("converse failed: %w", err)
+	}
+
+	// Append the assistant's response to the session history
+	session.Messages = append(session.Messages, types.Message{
+		Role:    types.ConversationRoleAssistant,
+		Content: result.Content,
+	})
+
+	sessionID := m.sessions.save(session)
+	return &AskResult{
+		Response:  result.Text,
+		SessionID: sessionID,
+	}, nil
 }
 
 // Upload scans local sources, diffs against S3, and uploads changed sessions.
