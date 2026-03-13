@@ -1,9 +1,8 @@
 # Muse
 
-A muse is the distilled essence of how you think. It absorbs memories from your
-agent conversations, Slack threads, and other digital traces, distills them into
-a soul document ([soul.md](https://soul.md)), and embodies your unique thought
-processes when asked questions.
+A muse absorbs memories from your agent conversations, distills them into a
+soul document (soul.md), and embodies your unique thought processes when asked
+questions.
 
 ## Install
 
