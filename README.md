@@ -60,13 +60,25 @@ muse listen            # start the MCP server
 go install github.com/ellistarn/muse/cmd/muse@latest
 ```
 
-Then add your muse as an MCP server so agents can ask it questions. For local use, add a stdio
-server to your agent's MCP config. Name the server after whoever's muse it is:
+## Getting Started
+
+Muse stores memories and souls in an S3 bucket you own. Muse uses your standard AWS credentials and region.
+
+Then push, dream, and inspect:
+
+```bash
+muse push              # upload local agent sessions to S3; export MUSE_BUCKET or use --bucket
+muse dream             # distill your soul from memories
+muse inspect           # see what your muse learned
+muse inspect --diff    # what changed since the last dream
+```
+
+Once you have a soul, wire up the MCP server so agents can ask your muse questions. Name the server after whoever's muse it is:
 
 ```json
 {
   "mcpServers": {
-    "ellis": {
+    "${USER}": {
       "command": "muse",
       "args": ["listen"]
     }
