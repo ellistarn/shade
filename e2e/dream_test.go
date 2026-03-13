@@ -17,7 +17,7 @@ import (
 type mockStore struct {
 	sessions    []storage.SessionEntry
 	data        map[string]*source.Session
-	skills      map[string]string
+	soul        string
 	reflections map[string]string // memoryKey -> content
 	deleted     []string
 }
@@ -25,7 +25,6 @@ type mockStore struct {
 func newMockStore() *mockStore {
 	return &mockStore{
 		data:        map[string]*source.Session{},
-		skills:      map[string]string{},
 		reflections: map[string]string{},
 	}
 }
@@ -86,12 +85,12 @@ func (m *mockStore) DeletePrefix(_ context.Context, prefix string) error {
 	return nil
 }
 
-func (m *mockStore) PutSkill(_ context.Context, name, content string) error {
-	m.skills[name] = content
+func (m *mockStore) PutSoul(_ context.Context, content string) error {
+	m.soul = content
 	return nil
 }
 
-func (m *mockStore) SnapshotSkills(_ context.Context, _ string) error {
+func (m *mockStore) SnapshotSoul(_ context.Context, _ string) error {
 	return nil
 }
 
@@ -133,21 +132,7 @@ func TestDreamPipeline(t *testing.T) {
 
 	llm := &mockLLM{
 		reflectResponse: "- Prefers kebab-case file names\n- No emojis in commits",
-		learnResponse: `=== SKILL: naming-conventions ===
----
-name: Naming Conventions
-description: File and commit naming preferences.
----
-
-Use kebab-case for file names. Never use emojis in commit messages.
-
-=== SKILL: commit-style ===
----
-name: Commit Style
-description: How to write commits.
----
-
-Keep commit messages plain text, no emojis.`,
+		learnResponse:   "## Naming\n\nI use kebab-case for file names.\n\n## Commits\n\nNo emojis. Keep them short.",
 	}
 
 	result, err := dream.Run(context.Background(), store, llm, llm, dream.Options{})
@@ -158,9 +143,6 @@ Keep commit messages plain text, no emojis.`,
 	if result.Processed != 2 {
 		t.Errorf("Processed = %d, want 2", result.Processed)
 	}
-	if result.Skills != 2 {
-		t.Errorf("Skills = %d, want 2", result.Skills)
-	}
 	if result.Pruned != 0 {
 		t.Errorf("Pruned = %d, want 0", result.Pruned)
 	}
@@ -168,17 +150,12 @@ Keep commit messages plain text, no emojis.`,
 		t.Errorf("Warnings = %v, want none", result.Warnings)
 	}
 
-	// Verify skills were written
-	if _, ok := store.skills["naming-conventions"]; !ok {
-		t.Error("skill 'naming-conventions' not written to store")
+	// Verify soul was written
+	if store.soul == "" {
+		t.Error("soul not written to store")
 	}
-	if _, ok := store.skills["commit-style"]; !ok {
-		t.Error("skill 'commit-style' not written to store")
-	}
-
-	// Verify old skills were cleared first
-	if len(store.deleted) == 0 || store.deleted[0] != "skills/" {
-		t.Errorf("expected DeletePrefix(\"skills/\"), got %v", store.deleted)
+	if !strings.Contains(store.soul, "kebab-case") {
+		t.Error("soul missing expected content")
 	}
 
 	// Verify LLM was called: 2 sessions * 3 reflect steps (summarize + extract + refine) + 1 learn = 7 calls
@@ -198,9 +175,6 @@ func TestDreamPipelineNoMemories(t *testing.T) {
 	if result.Processed != 0 {
 		t.Errorf("Processed = %d, want 0", result.Processed)
 	}
-	if result.Skills != 0 {
-		t.Errorf("Skills = %d, want 0", result.Skills)
-	}
 	if len(llm.calls) != 0 {
 		t.Errorf("LLM calls = %d, want 0", len(llm.calls))
 	}
@@ -219,20 +193,13 @@ func TestDreamPipelineLimit(t *testing.T) {
 
 	llm := &mockLLM{
 		reflectResponse: "- observation",
-		learnResponse: `=== SKILL: test-skill ===
----
-name: Test
-description: Test skill.
----
-
-Content here.`,
+		learnResponse:   "## Test\n\nContent here.",
 	}
 
 	result, err := dream.Run(context.Background(), store, llm, llm, dream.Options{Limit: 2})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
-	// 2 reflect calls + 1 learn call
 	if result.Processed != 2 {
 		t.Errorf("Processed = %d, want 2", result.Processed)
 	}
@@ -258,13 +225,7 @@ func TestDreamPipelineLimitIncludesPreviousReflections(t *testing.T) {
 
 	llm := &mockLLM{
 		reflectResponse: "- observation",
-		learnResponse: `=== SKILL: test-skill ===
----
-name: Test
-description: Test skill.
----
-
-Content here.`,
+		learnResponse:   "## Test\n\nContent here.",
 	}
 
 	// First run: limit to 2, should reflect 2 and learn from 2
@@ -342,13 +303,7 @@ func TestDreamPipelineReflect(t *testing.T) {
 
 	llm := &mockLLM{
 		reflectResponse: "- observation",
-		learnResponse: `=== SKILL: test ===
----
-name: Test
-description: A test skill.
----
-
-Content.`,
+		learnResponse:   "## Test\n\nContent.",
 	}
 
 	// First run
@@ -365,77 +320,5 @@ Content.`,
 	}
 	if result.Processed != 1 {
 		t.Errorf("Processed = %d, want 1", result.Processed)
-	}
-}
-
-func TestParseSkillsResponse(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		want    map[string]string
-		wantErr bool
-	}{
-		{
-			name: "basic",
-			input: `=== SKILL: code-style ===
----
-name: Code Style
-description: Coding preferences.
----
-
-Use tabs not spaces.`,
-			want: map[string]string{
-				"code-style": "---\nname: Code Style\ndescription: Coding preferences.\n---\n\nUse tabs not spaces.",
-			},
-		},
-		{
-			name:  "wrapped in code fences",
-			input: "```\n=== SKILL: test ===\n---\nname: Test\ndescription: Test.\n---\n\nContent.\n```",
-			want: map[string]string{
-				"test": "---\nname: Test\ndescription: Test.\n---\n\nContent.",
-			},
-		},
-		{
-			name: "multiple skills",
-			input: `=== SKILL: a ===
-Content A.
-
-=== SKILL: b ===
-Content B.`,
-			want: map[string]string{
-				"a": "Content A.",
-				"b": "Content B.",
-			},
-		},
-		{
-			name:    "empty input",
-			input:   "",
-			wantErr: true,
-		},
-		{
-			name:    "no skills delimiter",
-			input:   "just some random text without any skills",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := dream.ParseSkillsResponse(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("ParseSkillsResponse() error = %v, wantErr = %v", err, tt.wantErr)
-			}
-			if tt.wantErr {
-				return
-			}
-			if len(got) != len(tt.want) {
-				t.Fatalf("got %d skills, want %d", len(got), len(tt.want))
-			}
-			for k, v := range tt.want {
-				if got[k] != v {
-					t.Errorf("skill %q:\n  got:  %q\n  want: %q", k, got[k], v)
-				}
-			}
-		})
 	}
 }

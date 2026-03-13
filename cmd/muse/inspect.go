@@ -2,14 +2,12 @@ package main
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ellistarn/muse/internal/bedrock"
 	"github.com/ellistarn/muse/internal/log"
-	"github.com/ellistarn/muse/internal/skill"
 	"github.com/ellistarn/muse/internal/storage"
 )
 
@@ -17,7 +15,7 @@ func newInspectCmd() *cobra.Command {
 	var diff bool
 	cmd := &cobra.Command{
 		Use:   "inspect",
-		Short: "Inspect distilled skills",
+		Short: "Inspect the distilled soul",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireBucket(); err != nil {
 				return err
@@ -27,32 +25,18 @@ func newInspectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s3Client := store.S3()
 
 			if diff {
-				return runDiff(cmd, store, s3Client)
+				return runDiff(cmd, store)
 			}
 
-			log.Println("Loading skills...")
-			skills, err := skill.LoadAll(ctx, s3Client, bucket)
+			log.Println("Loading soul...")
+			soul, err := store.GetSoul(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to load skills: %w", err)
-			}
-			if len(skills) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No skills found. Run 'muse dream' to generate skills from memories.")
+				fmt.Fprintln(cmd.OutOrStdout(), "No soul found. Run 'muse dream' to generate one from memories.")
 				return nil
 			}
-			log.Printf("Found %d skills\n", len(skills))
-			sort.Slice(skills, func(i, j int) bool { return skills[i].Slug < skills[j].Slug })
-			for i, sk := range skills {
-				if i > 0 {
-					fmt.Fprintln(cmd.OutOrStdout())
-				}
-				fmt.Fprintf(cmd.OutOrStdout(), "=== %s ===\n", sk.Name)
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\n", sk.Description)
-				fmt.Fprintln(cmd.OutOrStdout())
-				fmt.Fprintln(cmd.OutOrStdout(), sk.Content)
-			}
+			fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(soul))
 			return nil
 		},
 	}
@@ -60,7 +44,7 @@ func newInspectCmd() *cobra.Command {
 	return cmd
 }
 
-func runDiff(cmd *cobra.Command, store *storage.Client, s3Client skill.S3API) error {
+func runDiff(cmd *cobra.Command, store *storage.Client) error {
 	ctx := cmd.Context()
 
 	log.Println("Loading dream history...")
@@ -72,25 +56,22 @@ func runDiff(cmd *cobra.Command, store *storage.Client, s3Client skill.S3API) er
 		return fmt.Errorf("no dream history found; run 'muse dream' to create a snapshot")
 	}
 	latest := dreams[len(dreams)-1]
-	log.Printf("Comparing snapshot %s with current skills\n", latest)
+	log.Printf("Comparing snapshot %s with current soul\n", latest)
 
-	prev, err := store.GetDreamSkills(ctx, latest)
+	prev, err := store.GetDreamSoul(ctx, latest)
 	if err != nil {
 		return fmt.Errorf("failed to load dream snapshot %s: %w", latest, err)
 	}
-	current, err := skill.LoadAll(ctx, s3Client, bucket)
+	current, err := store.GetSoul(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to load current skills: %w", err)
+		current = ""
 	}
-	log.Printf("Previous: %d skills, Current: %d skills\n", len(prev), len(current))
+	log.Printf("Previous: %d bytes, Current: %d bytes\n", len(prev), len(current))
 
-	if len(prev) == 0 && len(current) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No skills in either snapshot.")
+	if prev == "" && current == "" {
+		fmt.Fprintln(cmd.OutOrStdout(), "No soul in either snapshot.")
 		return nil
 	}
-
-	prevText := formatSkillSet("Previous skills", prev)
-	currText := formatSkillSet("Current skills", current)
 
 	log.Println("Generating diff summary...")
 	llm, err := bedrock.NewClient(ctx, bedrock.ModelSonnet)
@@ -98,26 +79,13 @@ func runDiff(cmd *cobra.Command, store *storage.Client, s3Client skill.S3API) er
 		return err
 	}
 
-	prompt := `Compare the previous and current skill sets. Summarize what changed in a few concise bullet points: which skills were added, removed, or meaningfully revised. Focus on substance, not formatting.`
+	prompt := `Compare the previous and current soul documents. Summarize what changed in a few concise bullet points: which sections were added, removed, or meaningfully revised. Focus on substance, not formatting.`
 
-	summary, usage, err := llm.Converse(ctx, prompt, prevText+"\n\n---\n\n"+currText)
+	summary, usage, err := llm.Converse(ctx, prompt, "Previous:\n\n"+prev+"\n\n---\n\nCurrent:\n\n"+current)
 	if err != nil {
 		return fmt.Errorf("failed to generate diff summary: %w", err)
 	}
 	log.Printf("Diff complete ($%.4f)\n", usage.Cost())
 	fmt.Fprintf(cmd.OutOrStdout(), "Changes since %s:\n\n%s\n", latest, strings.TrimSpace(summary))
 	return nil
-}
-
-func formatSkillSet(label string, skills []skill.Skill) string {
-	if len(skills) == 0 {
-		return fmt.Sprintf("%s: (none)", label)
-	}
-	sort.Slice(skills, func(i, j int) bool { return skills[i].Slug < skills[j].Slug })
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s:\n\n", label)
-	for _, sk := range skills {
-		fmt.Fprintf(&b, "## %s\n%s\n\n%s\n\n", sk.Name, sk.Description, sk.Content)
-	}
-	return b.String()
 }

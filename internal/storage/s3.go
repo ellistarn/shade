@@ -14,16 +14,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/ellistarn/muse/internal/awsconfig"
-	"github.com/ellistarn/muse/internal/skill"
 	"github.com/ellistarn/muse/internal/source"
 )
+
+const soulKey = "soul.md"
 
 type Client struct {
 	s3     *s3.Client
 	bucket string
 }
 
-// S3 returns the underlying S3 client for direct use by skill loading.
+// S3 returns the underlying S3 client for direct use.
 func (c *Client) S3() *s3.Client { return c.s3 }
 
 // Bucket returns the configured bucket name.
@@ -119,6 +120,53 @@ func (c *Client) GetSession(ctx context.Context, src, sessionID string) (*source
 	return &session, nil
 }
 
+// GetSoul downloads the soul document from S3.
+func (c *Client) GetSoul(ctx context.Context) (string, error) {
+	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &c.bucket,
+		Key:    aws.String(soulKey),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to get soul: %w", err)
+	}
+	defer out.Body.Close()
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read soul: %w", err)
+	}
+	return string(data), nil
+}
+
+// PutSoul writes the soul document to S3.
+func (c *Client) PutSoul(ctx context.Context, content string) error {
+	contentType := "text/markdown"
+	_, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      &c.bucket,
+		Key:         aws.String(soulKey),
+		Body:        bytes.NewReader([]byte(content)),
+		ContentType: &contentType,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to put soul: %w", err)
+	}
+	return nil
+}
+
+// SnapshotSoul copies the current soul to dreams/history/{timestamp}/soul.md.
+func (c *Client) SnapshotSoul(ctx context.Context, timestamp string) error {
+	dstKey := fmt.Sprintf("dreams/history/%s/soul.md", timestamp)
+	copySource := fmt.Sprintf("%s/%s", c.bucket, soulKey)
+	_, err := c.s3.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:     &c.bucket,
+		CopySource: &copySource,
+		Key:        &dstKey,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to snapshot soul: %w", err)
+	}
+	return nil
+}
+
 // GetJSON downloads and unmarshals a JSON object from S3.
 func (c *Client) GetJSON(ctx context.Context, key string, v any) error {
 	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
@@ -151,22 +199,6 @@ func (c *Client) PutJSON(ctx context.Context, key string, v any) error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to put %s: %w", key, err)
-	}
-	return nil
-}
-
-// PutSkill writes a SKILL.md file to S3 under skills/{name}/SKILL.md.
-func (c *Client) PutSkill(ctx context.Context, name, content string) error {
-	key := fmt.Sprintf("skills/%s/SKILL.md", name)
-	contentType := "text/markdown"
-	_, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      &c.bucket,
-		Key:         &key,
-		Body:        bytes.NewReader([]byte(content)),
-		ContentType: &contentType,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to put skill %s: %w", name, err)
 	}
 	return nil
 }
@@ -253,35 +285,6 @@ func (c *Client) DeletePrefix(ctx context.Context, prefix string) error {
 	return nil
 }
 
-// SnapshotSkills copies all current skills to dreams/{timestamp}/skills/.
-// This preserves the skill set before a dream overwrites it.
-func (c *Client) SnapshotSkills(ctx context.Context, timestamp string) error {
-	prefix := "skills/"
-	paginator := s3.NewListObjectsV2Paginator(c.s3, &s3.ListObjectsV2Input{
-		Bucket: &c.bucket,
-		Prefix: aws.String(prefix),
-	})
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to list skills for snapshot: %w", err)
-		}
-		for _, obj := range page.Contents {
-			srcKey := aws.ToString(obj.Key)
-			dstKey := fmt.Sprintf("dreams/history/%s/%s", timestamp, srcKey)
-			copySource := fmt.Sprintf("%s/%s", c.bucket, srcKey)
-			if _, err := c.s3.CopyObject(ctx, &s3.CopyObjectInput{
-				Bucket:     &c.bucket,
-				CopySource: &copySource,
-				Key:        &dstKey,
-			}); err != nil {
-				return fmt.Errorf("failed to copy %s to %s: %w", srcKey, dstKey, err)
-			}
-		}
-	}
-	return nil
-}
-
 // ListDreams returns timestamps of all dream snapshots, sorted ascending.
 func (c *Client) ListDreams(ctx context.Context) ([]string, error) {
 	prefix := "dreams/history/"
@@ -307,47 +310,22 @@ func (c *Client) ListDreams(ctx context.Context) ([]string, error) {
 	return timestamps, nil
 }
 
-// GetDreamSkills loads all skills from a specific dream snapshot.
-func (c *Client) GetDreamSkills(ctx context.Context, timestamp string) ([]skill.Skill, error) {
-	prefix := fmt.Sprintf("dreams/history/%s/skills/", timestamp)
-	var skills []skill.Skill
-	paginator := s3.NewListObjectsV2Paginator(c.s3, &s3.ListObjectsV2Input{
+// GetDreamSoul loads the soul from a specific dream snapshot.
+func (c *Client) GetDreamSoul(ctx context.Context, timestamp string) (string, error) {
+	key := fmt.Sprintf("dreams/history/%s/soul.md", timestamp)
+	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &c.bucket,
-		Prefix: aws.String(prefix),
+		Key:    &key,
 	})
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list dream skills: %w", err)
-		}
-		for _, obj := range page.Contents {
-			key := aws.ToString(obj.Key)
-			if !strings.HasSuffix(key, "/SKILL.md") {
-				continue
-			}
-			out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
-				Bucket: &c.bucket,
-				Key:    &key,
-			})
-			if err != nil {
-				continue
-			}
-			data, err := io.ReadAll(out.Body)
-			out.Body.Close()
-			if err != nil {
-				continue
-			}
-			sk, err := skill.Parse(string(data))
-			if err != nil {
-				continue
-			}
-			// Extract slug from key like "dreams/ts/skills/foo/SKILL.md"
-			rel := strings.TrimPrefix(key, prefix)
-			sk.Slug = strings.TrimSuffix(rel, "/SKILL.md")
-			skills = append(skills, *sk)
-		}
+	if err != nil {
+		return "", fmt.Errorf("failed to get dream soul for %s: %w", timestamp, err)
 	}
-	return skills, nil
+	defer out.Body.Close()
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read dream soul for %s: %w", timestamp, err)
+	}
+	return string(data), nil
 }
 
 func sessionKey(src, sessionID string) string {

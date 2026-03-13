@@ -79,13 +79,7 @@ func TestRunDream_SuccessfulRun(t *testing.T) {
 	})
 	mockLLM := &testLLM{
 		reflectResponse: "- Uses tabs\n- No emojis",
-		learnResponse: `=== SKILL: style ===
----
-name: Style
-description: Code style preferences.
----
-
-Use tabs. No emojis.`,
+		learnResponse:   "## Style\n\nUse tabs. No emojis.",
 	}
 
 	ctx := context.Background()
@@ -98,8 +92,8 @@ Use tabs. No emojis.`,
 	if !strings.Contains(stdout.String(), "Processed 1 memories") {
 		t.Errorf("expected 'Processed 1 memories', got: %s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "Produced 1 skills") {
-		t.Errorf("expected 'Produced 1 skills', got: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "Soul distilled") {
+		t.Errorf("expected 'Soul distilled', got: %s", stdout.String())
 	}
 }
 
@@ -107,13 +101,7 @@ func TestRunDream_SuccessfulLearn(t *testing.T) {
 	store := newTestStore()
 	store.reflections["memories/test/sess-1.json"] = "- observation"
 	mockLLM := &testLLM{
-		learnResponse: `=== SKILL: test ===
----
-name: Test
-description: Test skill.
----
-
-Content.`,
+		learnResponse: "## Test\n\nContent.",
 	}
 
 	ctx := context.Background()
@@ -123,8 +111,8 @@ Content.`,
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Produced 1 skills") {
-		t.Errorf("expected 'Produced 1 skills', got: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "Soul distilled") {
+		t.Errorf("expected 'Soul distilled', got: %s", stdout.String())
 	}
 }
 
@@ -132,14 +120,13 @@ Content.`,
 type testStore struct {
 	sessions    []storage.SessionEntry
 	data        map[string]*source.Session
-	skills      map[string]string
+	soul        string
 	reflections map[string]string
 }
 
 func newTestStore() *testStore {
 	return &testStore{
 		data:        map[string]*source.Session{},
-		skills:      map[string]string{},
 		reflections: map[string]string{},
 	}
 }
@@ -193,11 +180,11 @@ func (s *testStore) DeletePrefix(_ context.Context, prefix string) error {
 	}
 	return nil
 }
-func (s *testStore) PutSkill(_ context.Context, name, content string) error {
-	s.skills[name] = content
+func (s *testStore) PutSoul(_ context.Context, content string) error {
+	s.soul = content
 	return nil
 }
-func (s *testStore) SnapshotSkills(_ context.Context, _ string) error { return nil }
+func (s *testStore) SnapshotSoul(_ context.Context, _ string) error { return nil }
 
 // failingStore implements dream.Store where all operations return an error.
 type failingStore struct{ err error }
@@ -216,8 +203,8 @@ func (s *failingStore) GetReflection(_ context.Context, _ string) (string, error
 }
 func (s *failingStore) PutReflection(_ context.Context, _, _ string) error { return s.err }
 func (s *failingStore) DeletePrefix(_ context.Context, _ string) error     { return s.err }
-func (s *failingStore) PutSkill(_ context.Context, _, _ string) error      { return s.err }
-func (s *failingStore) SnapshotSkills(_ context.Context, _ string) error   { return s.err }
+func (s *failingStore) PutSoul(_ context.Context, _ string) error          { return s.err }
+func (s *failingStore) SnapshotSoul(_ context.Context, _ string) error     { return s.err }
 
 // testLLM implements dream.LLM for command-level tests.
 type testLLM struct {

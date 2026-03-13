@@ -5,15 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-
-	"github.com/ellistarn/muse/internal/awsconfig"
 	"github.com/ellistarn/muse/internal/bedrock"
 	"github.com/ellistarn/muse/internal/log"
-	"github.com/ellistarn/muse/internal/skill"
 	"github.com/ellistarn/muse/internal/source"
 	"github.com/ellistarn/muse/internal/storage"
 	"github.com/ellistarn/muse/prompts"
@@ -31,17 +24,12 @@ type UploadResult struct {
 // Muse holds the state needed for all operations.
 type Muse struct {
 	storage *storage.Client
-	s3      skill.S3API
 	bedrock *bedrock.Client
 	bucket  string
-	catalog []skill.Skill
+	soul    string // the full soul document, loaded at init
 }
 
 func New(ctx context.Context, bucket string) (*Muse, error) {
-	cfg, err := awsconfig.Load(ctx)
-	if err != nil {
-		return nil, err
-	}
 	storageClient, err := storage.NewClient(ctx, bucket)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage client: %w", err)
@@ -50,97 +38,44 @@ func New(ctx context.Context, bucket string) (*Muse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bedrock client: %w", err)
 	}
-	s3Client := s3.NewFromConfig(cfg)
-	catalog, err := skill.LoadCatalog(ctx, s3Client, bucket)
+	soul, err := storageClient.GetSoul(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load skill catalog: %w", err)
+		soul = "" // no soul yet — first run before any dreams
 	}
-	log.Printf("Loaded %d skills\n", len(catalog))
+	if soul != "" {
+		log.Printf("Loaded soul (%d bytes)\n", len(soul))
+	} else {
+		log.Println("No soul found (run 'muse dream' to generate one)")
+	}
 	return &Muse{
 		storage: storageClient,
-		s3:      s3Client,
 		bedrock: bedrockClient,
 		bucket:  bucket,
-		catalog: catalog,
+		soul:    soul,
 	}, nil
 }
 
 // NewForTest creates a Muse with caller-provided dependencies.
-func NewForTest(s3Client skill.S3API, bedrockClient *bedrock.Client, bucket string) *Muse {
-	catalog, _ := skill.LoadCatalog(context.Background(), s3Client, bucket)
+func NewForTest(bedrockClient *bedrock.Client, soul string) *Muse {
 	return &Muse{
-		s3:      s3Client,
 		bedrock: bedrockClient,
-		bucket:  bucket,
-		catalog: catalog,
+		soul:    soul,
 	}
 }
 
 var systemPrompt = prompts.Muse
 
-// readSkillToolSpec defines the read_skill tool for Bedrock tool use.
-func readSkillToolSpec() *types.ToolConfiguration {
-	return &types.ToolConfiguration{
-		Tools: []types.Tool{
-			&types.ToolMemberToolSpec{
-				Value: types.ToolSpecification{
-					Name:        aws.String("read_skill"),
-					Description: aws.String("Load a skill's full content by name. Call this for any skills relevant to the question."),
-					InputSchema: &types.ToolInputSchemaMemberJson{
-						Value: document.NewLazyDocument(map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"name": map[string]any{
-									"type":        "string",
-									"description": "The skill name from the catalog",
-								},
-							},
-							"required": []any{"name"},
-						}),
-					},
-				},
-			},
-		},
-	}
-}
-
-// Ask answers a question using the muse's distilled skills.
-// The LLM sees a catalog of skill names and descriptions, then uses tool
-// calling to fetch the full content of any skills it deems relevant.
-// This is a stateless one-shot: no session history, no persistence.
+// Ask answers a question using the muse's soul document.
+// The soul is included directly in the system prompt — no tool calling,
+// no progressive disclosure. Single-shot stateless interaction.
 func (m *Muse) Ask(ctx context.Context, question string) (string, error) {
-	system := fmt.Sprintf(systemPrompt, formatCatalog(m.catalog))
-	toolConfig := readSkillToolSpec()
-
-	handler := func(name string, input map[string]any) (string, error) {
-		if name != "read_skill" {
-			return "", fmt.Errorf("unknown tool: %s", name)
-		}
-		skillName, ok := input["name"].(string)
-		if !ok || skillName == "" {
-			return "", fmt.Errorf("read_skill requires a 'name' parameter")
-		}
-		sk, err := skill.LoadOne(ctx, m.s3, m.bucket, skillName)
-		if err != nil {
-			return "", fmt.Errorf("skill %q not found", skillName)
-		}
-		return sk.Content, nil
+	soul := m.soul
+	if soul == "" {
+		soul = "No soul document available yet. Run 'muse dream' to generate one from memories."
 	}
-
-	answer, _, err := m.bedrock.ConverseWithTools(ctx, system, question, toolConfig, handler,
-		"Now produce your final answer to the original question. Be direct and concise.")
+	system := fmt.Sprintf(systemPrompt, soul)
+	answer, _, err := m.bedrock.Converse(ctx, system, question)
 	return answer, err
-}
-
-func formatCatalog(skills []skill.Skill) string {
-	if len(skills) == 0 {
-		return "No skills are currently available."
-	}
-	var b strings.Builder
-	for _, sk := range skills {
-		fmt.Fprintf(&b, "- %s: %s\n", sk.Slug, sk.Description)
-	}
-	return b.String()
 }
 
 // Upload scans local sources, diffs against S3, and uploads changed sessions.
@@ -218,4 +153,17 @@ func FormatBytes(b int) string {
 	default:
 		return fmt.Sprintf("%dB", b)
 	}
+}
+
+// Soul returns the current soul document for use by the MCP handler.
+func (m *Muse) Soul() string {
+	return m.soul
+}
+
+// FormatSoul formats the soul for display, with a placeholder if empty.
+func FormatSoul(soul string) string {
+	if soul == "" {
+		return "No soul found. Run 'muse dream' to generate one from memories."
+	}
+	return strings.TrimSpace(soul)
 }

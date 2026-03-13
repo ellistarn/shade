@@ -1,7 +1,7 @@
 Ask your muse a question. A muse is the distilled essence of how its owner thinks —
 it reviews ideas, challenges assumptions, and asks probing questions. It has broad experience
-distilled into skills encoding judgment, mental models, tradeoffs, and perspectives across
-whatever domains its owner operates in.
+distilled into a soul document (https://soul.md) encoding judgment, mental models, tradeoffs,
+and perspectives across whatever domains its owner operates in.
 
 Use your muse for:
 - Gut-checking an approach before committing to it

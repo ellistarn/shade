@@ -23,8 +23,8 @@ type Store interface {
 	GetReflection(ctx context.Context, memoryKey string) (string, error)
 	PutReflection(ctx context.Context, key, content string) error
 	DeletePrefix(ctx context.Context, prefix string) error
-	PutSkill(ctx context.Context, name, content string) error
-	SnapshotSkills(ctx context.Context, timestamp string) error
+	PutSoul(ctx context.Context, content string) error
+	SnapshotSoul(ctx context.Context, timestamp string) error
 }
 
 // LLM is the subset of an LLM client used by the dream pipeline.
@@ -37,7 +37,6 @@ type Result struct {
 	Processed int
 	Pruned    int
 	Remaining int // memories still pending reflection
-	Skills    int
 	Usage     llm.Usage
 	Warnings  []string
 }
@@ -55,7 +54,7 @@ func estimateTokens(s string) int {
 	return len(s) / 4
 }
 
-// Run executes the dream pipeline: reflect on new memories, then learn skills
+// Run executes the dream pipeline: reflect on new memories, then learn a soul
 // from all reflections. Reflections are the source of truth for what has been
 // processed; there is no separate state file.
 func Run(ctx context.Context, store Store, reflectLLM, learnLLM LLM, opts Options) (*Result, error) {
@@ -187,22 +186,15 @@ func Run(ctx context.Context, store Store, reflectLLM, learnLLM LLM, opts Option
 		return nil, fmt.Errorf("failed to load reflections: %w", err)
 	}
 	if len(allReflections) == 0 {
-		return &Result{Pruned: pruned, Remaining: remaining, Skills: 0, Warnings: warnings}, nil
+		return &Result{Pruned: pruned, Remaining: remaining, Warnings: warnings}, nil
 	}
 
-	log.Printf("Learning skills from %d reflections...\n", len(allReflections))
-	skills, learnUsage, err := learn(ctx, learnLLM, allReflections)
+	log.Printf("Distilling soul from %d reflections...\n", len(allReflections))
+	learnUsage, err := learn(ctx, learnLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
-	log.Printf("Produced %d skills ($%.4f)\n", len(skills), learnUsage.Cost())
-
-	// Write skills (snapshot old skills first, then clear and replace)
-	writeWarnings, err := writeSkills(ctx, store, skills)
-	if err != nil {
-		return nil, err
-	}
-	warnings = append(warnings, writeWarnings...)
+	log.Printf("Soul distilled ($%.4f)\n", learnUsage.Cost())
 
 	processed := len(pending) - len(warnings)
 	if processed < 0 {
@@ -212,14 +204,13 @@ func Run(ctx context.Context, store Store, reflectLLM, learnLLM LLM, opts Option
 		Processed: processed,
 		Pruned:    pruned,
 		Remaining: remaining,
-		Skills:    len(skills),
 		Usage:     reflectUsage.Add(learnUsage),
 		Warnings:  warnings,
 	}, nil
 }
 
 // LearnOnly re-runs only the learn phase using persisted reflections.
-// Use this to re-synthesize skills with improved techniques without re-reflecting.
+// Use this to re-synthesize the soul with improved techniques without re-reflecting.
 func LearnOnly(ctx context.Context, store Store, learnLLM LLM) (*Result, error) {
 	allReflections, err := loadAllReflections(ctx, store)
 	if err != nil {
@@ -229,45 +220,30 @@ func LearnOnly(ctx context.Context, store Store, learnLLM LLM) (*Result, error) 
 		return &Result{}, nil
 	}
 
-	log.Printf("Re-learning skills from %d reflections...\n", len(allReflections))
-	skills, usage, err := learn(ctx, learnLLM, allReflections)
+	log.Printf("Re-distilling soul from %d reflections...\n", len(allReflections))
+	usage, err := learn(ctx, learnLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
-	log.Printf("Produced %d skills ($%.4f)\n", len(skills), usage.Cost())
-
-	log.Println("Writing skills to storage...")
-	writeWarnings, err := writeSkills(ctx, store, skills)
-	if err != nil {
-		return nil, err
-	}
+	log.Printf("Soul distilled ($%.4f)\n", usage.Cost())
 
 	return &Result{
-		Skills:   len(skills),
 		Usage:    usage,
-		Warnings: writeWarnings,
+		Warnings: nil,
 	}, nil
 }
 
-// writeSkills snapshots existing skills, clears them, and writes the new set.
-func writeSkills(ctx context.Context, store Store, skills map[string]string) (warnings []string, err error) {
+// writeSoul snapshots the existing soul and writes the new one.
+func writeSoul(ctx context.Context, store Store, soul string) error {
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	log.Printf("Snapshotting previous skills to dreams/history/%s/...\n", timestamp)
-	if err := store.SnapshotSkills(ctx, timestamp); err != nil {
+	log.Printf("Snapshotting previous soul to dreams/history/%s/...\n", timestamp)
+	if err := store.SnapshotSoul(ctx, timestamp); err != nil {
 		log.Printf("Snapshot skipped (expected on first dream): %v\n", err)
 	} else {
 		log.Printf("Snapshot saved\n")
 	}
-	log.Printf("Writing %d skills to storage...\n", len(skills))
-	if err := store.DeletePrefix(ctx, "skills/"); err != nil {
-		return nil, fmt.Errorf("failed to clear old skills: %w", err)
-	}
-	for name, content := range skills {
-		if err := store.PutSkill(ctx, name, content); err != nil {
-			warnings = append(warnings, fmt.Sprintf("failed to write skill %s: %v", name, err))
-		}
-	}
-	return warnings, nil
+	log.Println("Writing soul to storage...")
+	return store.PutSoul(ctx, soul)
 }
 
 // loadAllReflections fetches every persisted reflection from storage.
@@ -383,17 +359,36 @@ func buildHumanFocusedView(ctx context.Context, client LLM, turns []turn) ([]str
 	return chunks, totalUsage, nil
 }
 
-func learn(ctx context.Context, client LLM, observations []string) (map[string]string, llm.Usage, error) {
+func learn(ctx context.Context, client LLM, store Store, observations []string) (llm.Usage, error) {
 	if len(observations) == 0 {
-		return nil, llm.Usage{}, nil
+		return llm.Usage{}, nil
 	}
 	input := strings.Join(observations, "\n\n---\n\n")
-	raw, usage, err := client.Converse(ctx, learnPrompt, input, llm.WithThinking(16000))
+	soul, usage, err := client.Converse(ctx, learnPrompt, input, llm.WithThinking(16000))
 	if err != nil {
-		return nil, usage, err
+		return usage, err
 	}
-	skills, err := ParseSkillsResponse(raw)
-	return skills, usage, err
+	// Strip markdown code fences the LLM sometimes wraps output in
+	soul = stripCodeFences(soul)
+	if err := writeSoul(ctx, store, soul); err != nil {
+		return usage, fmt.Errorf("failed to write soul: %w", err)
+	}
+	return usage, nil
+}
+
+// stripCodeFences removes wrapping ```markdown ... ``` from LLM output.
+func stripCodeFences(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") {
+		if idx := strings.Index(s, "\n"); idx != -1 {
+			s = s[idx+1:]
+		}
+		if strings.HasSuffix(s, "```") {
+			s = s[:len(s)-3]
+		}
+		s = strings.TrimSpace(s)
+	}
+	return s
 }
 
 // maxChunkChars caps each conversation chunk to ~50k tokens of input,
@@ -443,58 +438,4 @@ func extractTurns(session *source.Session) []turn {
 		}
 	}
 	return turns
-}
-
-// ParseSkillsResponse splits the LLM's reduce output into individual skill files.
-// Expected format: multiple blocks delimited by "=== SKILL: skill-name ===" headers,
-// where each block contains the complete SKILL.md content (frontmatter + body).
-func ParseSkillsResponse(raw string) (map[string]string, error) {
-	// Strip markdown code fences the LLM sometimes wraps output in
-	cleaned := strings.TrimSpace(raw)
-	if strings.HasPrefix(cleaned, "```") {
-		if idx := strings.Index(cleaned, "\n"); idx != -1 {
-			cleaned = cleaned[idx+1:]
-		}
-		if strings.HasSuffix(cleaned, "```") {
-			cleaned = cleaned[:len(cleaned)-3]
-		}
-		cleaned = strings.TrimSpace(cleaned)
-	}
-
-	skills := map[string]string{}
-	sections := strings.Split(cleaned, "=== SKILL:")
-	for _, section := range sections[1:] { // skip content before first delimiter
-		// Find the closing "===" with flexible whitespace handling
-		endHeader := -1
-		for i := 0; i < len(section); i++ {
-			if i+3 <= len(section) && section[i:i+3] == "===" && (i == 0 || section[i-1] == ' ') {
-				// Check it's the closing delimiter, not part of content
-				rest := section[i+3:]
-				trimmed := strings.TrimLeft(rest, " \t")
-				if len(trimmed) == 0 || trimmed[0] == '\n' || trimmed[0] == '\r' {
-					endHeader = i
-					// Advance past the === and the newline
-					skipTo := i + 3 + (len(rest) - len(trimmed))
-					if skipTo < len(section) && (section[skipTo] == '\n' || section[skipTo] == '\r') {
-						skipTo++
-					}
-					name := strings.TrimSpace(section[:endHeader])
-					content := strings.TrimSpace(section[skipTo:])
-					if name != "" && content != "" {
-						skills[name] = content
-					}
-					break
-				}
-			}
-		}
-	}
-	if len(skills) == 0 {
-		// Log a snippet of the raw output to aid debugging
-		snippet := raw
-		if len(snippet) > 500 {
-			snippet = snippet[:500] + "..."
-		}
-		return nil, fmt.Errorf("no skills found in learn output. Raw response starts with:\n%s", snippet)
-	}
-	return skills, nil
 }

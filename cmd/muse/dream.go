@@ -19,7 +19,7 @@ func newDreamCmd() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "dream",
-		Short: "Distill skills from memories",
+		Short: "Distill a soul from memories",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireBucket(); err != nil {
 				return err
@@ -50,7 +50,7 @@ func newDreamCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&reflect, "reflect", false, "re-reflect on all memories from scratch")
-	cmd.Flags().BoolVar(&learn, "learn", false, "skip reflect, re-synthesize skills from existing reflections")
+	cmd.Flags().BoolVar(&learn, "learn", false, "skip reflect, re-distill soul from existing reflections")
 	cmd.Flags().IntVar(&limit, "limit", 100, "max memories to process (0 = no limit)")
 	return cmd
 }
@@ -79,7 +79,7 @@ func runDream(ctx context.Context, stdout, stderr io.Writer, store dream.Store, 
 			fmt.Fprintf(stdout, "%d memories still pending reflection (run dream again)\n", result.Remaining)
 		}
 	}
-	fmt.Fprintf(stdout, "Produced %d skills (%dk input, %dk output tokens, $%.2f)\n",
-		result.Skills, result.Usage.InputTokens/1000, result.Usage.OutputTokens/1000, result.Usage.Cost())
+	fmt.Fprintf(stdout, "Soul distilled (%dk input, %dk output tokens, $%.2f)\n",
+		result.Usage.InputTokens/1000, result.Usage.OutputTokens/1000, result.Usage.Cost())
 	return nil
 }
