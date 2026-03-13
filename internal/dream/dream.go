@@ -13,6 +13,7 @@ import (
 	"github.com/ellistarn/muse/internal/log"
 	"github.com/ellistarn/muse/internal/source"
 	"github.com/ellistarn/muse/internal/storage"
+	"github.com/ellistarn/muse/prompts"
 )
 
 // Store is the subset of storage.Client used by the dream pipeline.
@@ -114,11 +115,11 @@ func Run(ctx context.Context, store Store, reflectLLM, learnLLM LLM, opts Option
 			}
 			turns := extractTurns(session)
 			for _, t := range turns {
-				totalEstimate += estimateTokens(reflectSummarizePrompt) + estimateTokens(t.assistantContent)
+				totalEstimate += estimateTokens(prompts.ReflectSummarize) + estimateTokens(t.assistantContent)
 				totalEstimate += estimateTokens(t.humanContent)
 			}
 			// Add estimate for extract + refine passes
-			totalEstimate += estimateTokens(reflectExtractPrompt) + estimateTokens(reflectRefinePrompt)
+			totalEstimate += estimateTokens(prompts.ReflectExtract) + estimateTokens(prompts.ReflectRefine)
 		}
 		log.Printf("Estimated ~%dk input tokens for reflect phase\n", totalEstimate/1000)
 
@@ -292,7 +293,7 @@ func reflectOnSession(ctx context.Context, client LLM, session *source.Session) 
 	// Step 2: Extract candidate observations (Pass 1)
 	var allCandidates []string
 	for _, chunk := range chunks {
-		obs, usage, err := client.Converse(ctx, reflectExtractPrompt, chunk, llm.WithMaxTokens(4096))
+		obs, usage, err := client.Converse(ctx, prompts.ReflectExtract, chunk, llm.WithMaxTokens(4096))
 		totalUsage = totalUsage.Add(usage)
 		if err != nil && obs == "" {
 			return "", totalUsage, err
@@ -307,7 +308,7 @@ func reflectOnSession(ctx context.Context, client LLM, session *source.Session) 
 
 	// Step 3: Refine observations (Pass 2)
 	candidates := strings.Join(allCandidates, "\n\n")
-	refined, usage, err := client.Converse(ctx, reflectRefinePrompt, candidates, llm.WithMaxTokens(4096))
+	refined, usage, err := client.Converse(ctx, prompts.ReflectRefine, candidates, llm.WithMaxTokens(4096))
 	totalUsage = totalUsage.Add(usage)
 	if err != nil {
 		return "", totalUsage, err
@@ -334,7 +335,7 @@ func buildHumanFocusedView(ctx context.Context, client LLM, turns []turn) ([]str
 		// Summarize the assistant's message into 1-2 structural sentences
 		var contextLine string
 		if t.assistantContent != "" {
-			summary, usage, err := client.Converse(ctx, reflectSummarizePrompt, t.assistantContent, llm.WithMaxTokens(256))
+			summary, usage, err := client.Converse(ctx, prompts.ReflectSummarize, t.assistantContent, llm.WithMaxTokens(256))
 			totalUsage = totalUsage.Add(usage)
 			if err != nil {
 				// On error, fall back to a generic context marker
@@ -364,7 +365,7 @@ func learn(ctx context.Context, client LLM, store Store, observations []string) 
 		return llm.Usage{}, nil
 	}
 	input := strings.Join(observations, "\n\n---\n\n")
-	soul, usage, err := client.Converse(ctx, learnPrompt, input, llm.WithThinking(16000))
+	soul, usage, err := client.Converse(ctx, prompts.Learn, input, llm.WithThinking(16000))
 	if err != nil {
 		return usage, err
 	}

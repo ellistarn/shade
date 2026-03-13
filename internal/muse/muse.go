@@ -3,7 +3,6 @@ package muse
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/ellistarn/muse/internal/bedrock"
 	"github.com/ellistarn/muse/internal/log"
@@ -25,7 +24,6 @@ type UploadResult struct {
 type Muse struct {
 	storage *storage.Client
 	bedrock *bedrock.Client
-	bucket  string
 	soul    string // the full soul document, loaded at init
 }
 
@@ -40,6 +38,9 @@ func New(ctx context.Context, bucket string) (*Muse, error) {
 	}
 	soul, err := storageClient.GetSoul(ctx)
 	if err != nil {
+		if !storage.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to load soul: %w", err)
+		}
 		soul = "" // no soul yet — first run before any dreams
 	}
 	if soul != "" {
@@ -50,7 +51,6 @@ func New(ctx context.Context, bucket string) (*Muse, error) {
 	return &Muse{
 		storage: storageClient,
 		bedrock: bedrockClient,
-		bucket:  bucket,
 		soul:    soul,
 	}, nil
 }
@@ -158,12 +158,4 @@ func FormatBytes(b int) string {
 // Soul returns the current soul document for use by the MCP handler.
 func (m *Muse) Soul() string {
 	return m.soul
-}
-
-// FormatSoul formats the soul for display, with a placeholder if empty.
-func FormatSoul(soul string) string {
-	if soul == "" {
-		return "No soul found. Run 'muse dream' to generate one from memories."
-	}
-	return strings.TrimSpace(soul)
 }

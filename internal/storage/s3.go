@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/ellistarn/muse/internal/awsconfig"
 	"github.com/ellistarn/muse/internal/source"
@@ -19,16 +21,16 @@ import (
 
 const soulKey = "soul.md"
 
+// IsNotFound reports whether the error is an S3 NoSuchKey error.
+func IsNotFound(err error) bool {
+	var nsk *s3types.NoSuchKey
+	return errors.As(err, &nsk)
+}
+
 type Client struct {
 	s3     *s3.Client
 	bucket string
 }
-
-// S3 returns the underlying S3 client for direct use.
-func (c *Client) S3() *s3.Client { return c.s3 }
-
-// Bucket returns the configured bucket name.
-func (c *Client) Bucket() string { return c.bucket }
 
 func NewClient(ctx context.Context, bucket string) (*Client, error) {
 	cfg, err := awsconfig.Load(ctx)
@@ -163,42 +165,6 @@ func (c *Client) SnapshotSoul(ctx context.Context, timestamp string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to snapshot soul: %w", err)
-	}
-	return nil
-}
-
-// GetJSON downloads and unmarshals a JSON object from S3.
-func (c *Client) GetJSON(ctx context.Context, key string, v any) error {
-	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &c.bucket,
-		Key:    &key,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get %s: %w", key, err)
-	}
-	defer out.Body.Close()
-	data, err := io.ReadAll(out.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read %s: %w", key, err)
-	}
-	return json.Unmarshal(data, v)
-}
-
-// PutJSON marshals and uploads a JSON object to S3.
-func (c *Client) PutJSON(ctx context.Context, key string, v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal %s: %w", key, err)
-	}
-	contentType := "application/json"
-	_, err = c.s3.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      &c.bucket,
-		Key:         &key,
-		Body:        bytes.NewReader(data),
-		ContentType: &contentType,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to put %s: %w", key, err)
 	}
 	return nil
 }

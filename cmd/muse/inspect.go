@@ -33,6 +33,9 @@ func newInspectCmd() *cobra.Command {
 			log.Println("Loading soul...")
 			soul, err := store.GetSoul(ctx)
 			if err != nil {
+				if !storage.IsNotFound(err) {
+					return fmt.Errorf("failed to load soul: %w", err)
+				}
 				fmt.Fprintln(cmd.OutOrStdout(), "No soul found. Run 'muse dream' to generate one from memories.")
 				return nil
 			}
@@ -64,6 +67,9 @@ func runDiff(cmd *cobra.Command, store *storage.Client) error {
 	}
 	current, err := store.GetSoul(ctx)
 	if err != nil {
+		if !storage.IsNotFound(err) {
+			return fmt.Errorf("failed to load current soul: %w", err)
+		}
 		current = ""
 	}
 	log.Printf("Previous: %d bytes, Current: %d bytes\n", len(prev), len(current))

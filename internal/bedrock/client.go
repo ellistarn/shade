@@ -64,9 +64,6 @@ type Runtime interface {
 	Converse(ctx context.Context, params *bedrockruntime.ConverseInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.ConverseOutput, error)
 }
 
-// ToolHandler resolves a tool call by name and input, returning the result text.
-type ToolHandler func(name string, input map[string]any) (string, error)
-
 // Client wraps Bedrock's Converse API with rate limiting and retry.
 type Client struct {
 	runtime  Runtime
@@ -179,86 +176,6 @@ func (c *Client) Converse(ctx context.Context, system, user string, opts ...llm.
 	}
 	text, usage, _, _, err := c.converseRaw(ctx, system, messages, nil, o)
 	return text, usage, err
-}
-
-const maxToolRounds = 3
-
-// ConverseWithTools sends a message and handles tool use in a loop.
-// The LLM can request tools up to maxToolRounds times. Once the tool loop
-// completes, a final call with synthesisPrompt (without tools) produces the
-// user-facing answer. This keeps intermediate reasoning and tool calls internal.
-func (c *Client) ConverseWithTools(ctx context.Context, system, user string, toolConfig *types.ToolConfiguration, handler ToolHandler, synthesisPrompt string) (string, Usage, error) {
-	messages := []types.Message{
-		{
-			Role:    types.ConversationRoleUser,
-			Content: []types.ContentBlock{&types.ContentBlockMemberText{Value: user}},
-		},
-	}
-
-	var totalUsage Usage
-	for range maxToolRounds {
-		_, usage, stop, assistantContent, err := c.converseRaw(ctx, system, messages, toolConfig, llm.ConverseOptions{})
-		totalUsage = totalUsage.Add(usage)
-		if err != nil {
-			return "", totalUsage, err
-		}
-		// Append the assistant's response (text or tool calls) to the conversation
-		messages = append(messages, types.Message{
-			Role:    types.ConversationRoleAssistant,
-			Content: assistantContent,
-		})
-		if stop != types.StopReasonToolUse {
-			break
-		}
-		toolResults := resolveToolCalls(assistantContent, handler)
-		messages = append(messages, types.Message{
-			Role:    types.ConversationRoleUser,
-			Content: toolResults,
-		})
-	}
-	// Synthesize: one final call to produce the user-facing answer. We pass
-	// toolConfig so Bedrock accepts the toolUse/toolResult blocks in history.
-	messages = append(messages, types.Message{
-		Role:    types.ConversationRoleUser,
-		Content: []types.ContentBlock{&types.ContentBlockMemberText{Value: synthesisPrompt}},
-	})
-	text, usage, _, _, err := c.converseRaw(ctx, system, messages, toolConfig, llm.ConverseOptions{})
-	return text, totalUsage.Add(usage), err
-}
-
-func resolveToolCalls(content []types.ContentBlock, handler ToolHandler) []types.ContentBlock {
-	var results []types.ContentBlock
-	for _, block := range content {
-		tu, ok := block.(*types.ContentBlockMemberToolUse)
-		if !ok {
-			continue
-		}
-		var input map[string]any
-		if tu.Value.Input != nil {
-			if err := tu.Value.Input.UnmarshalSmithyDocument(&input); err != nil {
-				input = map[string]any{}
-			}
-		}
-		result, err := handler(aws.ToString(tu.Value.Name), input)
-		if err != nil {
-			results = append(results, &types.ContentBlockMemberToolResult{
-				Value: types.ToolResultBlock{
-					ToolUseId: tu.Value.ToolUseId,
-					Status:    types.ToolResultStatusError,
-					Content:   []types.ToolResultContentBlock{&types.ToolResultContentBlockMemberText{Value: err.Error()}},
-				},
-			})
-			continue
-		}
-		results = append(results, &types.ContentBlockMemberToolResult{
-			Value: types.ToolResultBlock{
-				ToolUseId: tu.Value.ToolUseId,
-				Status:    types.ToolResultStatusSuccess,
-				Content:   []types.ToolResultContentBlock{&types.ToolResultContentBlockMemberText{Value: result}},
-			},
-		})
-	}
-	return results
 }
 
 func (c *Client) converseRaw(ctx context.Context, system string, messages []types.Message, toolConfig *types.ToolConfiguration, opts llm.ConverseOptions) (string, Usage, types.StopReason, []types.ContentBlock, error) {

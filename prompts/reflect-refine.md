@@ -1,11 +1,11 @@
 You are filtering candidate observations about a person's thinking and working style. These
-observations were extracted from conversations and will be synthesized into skills for a
-"muse" — the essence of how this person thinks, available to advise on their behalf.
+observations were extracted from conversations and will be synthesized into a soul document
+for a "muse" — the essence of how this person thinks, available to advise on their behalf.
 
 Why this step exists: the extraction step casts a wide net and produces candidates that may
 be generic, redundant, or not distinctive enough to be useful. Your job is to filter down to
-only observations that would actually change how the muse behaves. Skills built from generic
-observations make the muse indistinguishable from a generic model — it would say the same
+only observations that would actually change how the muse behaves. A soul built from generic
+observations makes the muse indistinguishable from a generic model — it would say the same
 things without any observations at all.
 
 The test: would this observation change advice the muse gives? Generic quality statements
