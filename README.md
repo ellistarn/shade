@@ -2,7 +2,7 @@
 
 A muse absorbs memories from your conversations, distills them into a soul
 document (soul.md), and embodies your unique thought processes when asked
-questions. Memories are discovered from Claude Code, Kiro, and OpenCode.
+questions.
 
 ## Install
 
@@ -29,6 +29,14 @@ Wire up the MCP server so agents can ask your muse questions:
   }
 }
 ```
+
+## Sources
+
+Memories are automatically discovered from:
+
+- **Claude Code** — `~/.claude/projects/`
+- **Kiro** — `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/`
+- **OpenCode** — `~/.local/share/opencode/opencode.db`
 
 ## Storage
 
