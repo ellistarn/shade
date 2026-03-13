@@ -1,4 +1,4 @@
-package llm
+package inference
 
 // ConverseOption configures a Converse call.
 type ConverseOption func(*ConverseOptions)

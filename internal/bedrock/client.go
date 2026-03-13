@@ -19,7 +19,7 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
 	"github.com/ellistarn/muse/internal/awsconfig"
-	"github.com/ellistarn/muse/internal/llm"
+	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/log"
 )
 
@@ -32,8 +32,8 @@ const (
 	defaultMaxTokens = 4096
 )
 
-// Usage is an alias for llm.Usage so callers don't need to import both packages.
-type Usage = llm.Usage
+// Usage is an alias for inference.Usage so callers don't need to import both packages.
+type Usage = inference.Usage
 
 type modelPricing struct {
 	inputPerToken  float64
@@ -173,8 +173,8 @@ func (c *Client) refillTokens(ctx context.Context) {
 
 // Converse sends a message with a system prompt and returns the text response.
 // Requests are paced by a token bucket and retried with exponential backoff on throttling errors.
-func (c *Client) Converse(ctx context.Context, system, user string, opts ...llm.ConverseOption) (string, Usage, error) {
-	o := llm.Apply(opts)
+func (c *Client) Converse(ctx context.Context, system, user string, opts ...inference.ConverseOption) (string, Usage, error) {
+	o := inference.Apply(opts)
 	messages := []types.Message{
 		{
 			Role:    types.ConversationRoleUser,
@@ -194,8 +194,8 @@ type ConverseResult struct {
 }
 
 // ConverseMessages sends a full message history with optional tool config.
-func (c *Client) ConverseMessages(ctx context.Context, system string, messages []types.Message, toolConfig *types.ToolConfiguration, opts ...llm.ConverseOption) (*ConverseResult, error) {
-	o := llm.Apply(opts)
+func (c *Client) ConverseMessages(ctx context.Context, system string, messages []types.Message, toolConfig *types.ToolConfiguration, opts ...inference.ConverseOption) (*ConverseResult, error) {
+	o := inference.Apply(opts)
 	text, usage, stop, content, err := c.converseRaw(ctx, system, messages, toolConfig, o)
 	if err != nil {
 		return nil, err
@@ -208,7 +208,7 @@ func (c *Client) ConverseMessages(ctx context.Context, system string, messages [
 	}, nil
 }
 
-func (c *Client) converseRaw(ctx context.Context, system string, messages []types.Message, toolConfig *types.ToolConfiguration, opts llm.ConverseOptions) (string, Usage, types.StopReason, []types.ContentBlock, error) {
+func (c *Client) converseRaw(ctx context.Context, system string, messages []types.Message, toolConfig *types.ToolConfiguration, opts inference.ConverseOptions) (string, Usage, types.StopReason, []types.ContentBlock, error) {
 	var (
 		text    string
 		usage   Usage
@@ -226,7 +226,7 @@ func (c *Client) converseRaw(ctx context.Context, system string, messages []type
 	return text, usage, stop, content, nil
 }
 
-func (c *Client) converseRawOnce(ctx context.Context, system string, messages []types.Message, toolConfig *types.ToolConfiguration, opts llm.ConverseOptions) (string, Usage, types.StopReason, []types.ContentBlock, error) {
+func (c *Client) converseRawOnce(ctx context.Context, system string, messages []types.Message, toolConfig *types.ToolConfiguration, opts inference.ConverseOptions) (string, Usage, types.StopReason, []types.ContentBlock, error) {
 	maxTokens := int32(defaultMaxTokens)
 	if opts.MaxTokens > 0 {
 		maxTokens = opts.MaxTokens
@@ -356,7 +356,7 @@ type StreamFunc func(delta string)
 // ConverseMessagesStream sends a full message history and streams text deltas
 // through fn. Falls back to non-streaming Converse if the runtime doesn't
 // support ConverseStream. Returns the complete result for session bookkeeping.
-func (c *Client) ConverseMessagesStream(ctx context.Context, system string, messages []types.Message, fn StreamFunc, opts ...llm.ConverseOption) (*ConverseResult, error) {
+func (c *Client) ConverseMessagesStream(ctx context.Context, system string, messages []types.Message, fn StreamFunc, opts ...inference.ConverseOption) (*ConverseResult, error) {
 	sr, ok := c.runtime.(StreamingRuntime)
 	if !ok {
 		// Fallback: non-streaming path (test mocks, etc.)
@@ -370,7 +370,7 @@ func (c *Client) ConverseMessagesStream(ctx context.Context, system string, mess
 		return result, nil
 	}
 
-	o := llm.Apply(opts)
+	o := inference.Apply(opts)
 	maxTokens := int32(defaultMaxTokens)
 	if o.MaxTokens > 0 {
 		maxTokens = o.MaxTokens

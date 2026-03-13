@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ellistarn/muse/internal/llm"
+	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/log"
 	"github.com/ellistarn/muse/internal/memory"
 	"github.com/ellistarn/muse/internal/storage"
@@ -18,7 +18,7 @@ import (
 
 // LLM is the subset of an LLM client used by the dream pipeline.
 type LLM interface {
-	Converse(ctx context.Context, system, user string, opts ...llm.ConverseOption) (string, llm.Usage, error)
+	Converse(ctx context.Context, system, user string, opts ...inference.ConverseOption) (string, inference.Usage, error)
 }
 
 // Result summarizes a dream run.
@@ -26,7 +26,7 @@ type Result struct {
 	Processed int
 	Pruned    int
 	Remaining int // memories still pending reflection
-	Usage     llm.Usage
+	Usage     inference.Usage
 	Warnings  []string
 }
 
@@ -90,7 +90,7 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 	log.Printf("Found %d memories (%d new, %d already reflected)\n", len(entries), totalPending, pruned)
 
 	var warnings []string
-	var reflectUsage llm.Usage
+	var reflectUsage inference.Usage
 
 	// Reflect on pending memories in parallel
 	if len(pending) > 0 {
@@ -115,7 +115,7 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 		type mapResult struct {
 			key          string
 			observations string
-			usage        llm.Usage
+			usage        inference.Usage
 			err          error
 		}
 		results := make([]mapResult, len(pending))
@@ -260,13 +260,13 @@ type turn struct {
 	humanContent     string // human's message
 }
 
-func reflectOnSession(ctx context.Context, client LLM, session *memory.Session) (string, llm.Usage, error) {
+func reflectOnSession(ctx context.Context, client LLM, session *memory.Session) (string, inference.Usage, error) {
 	turns := extractTurns(session)
 	if len(turns) == 0 {
-		return "", llm.Usage{}, nil
+		return "", inference.Usage{}, nil
 	}
 
-	var totalUsage llm.Usage
+	var totalUsage inference.Usage
 
 	// Step 1: Summarize assistant context for each turn, then build human-focused view
 	chunks, usage, err := buildHumanFocusedView(ctx, client, turns)
@@ -281,7 +281,7 @@ func reflectOnSession(ctx context.Context, client LLM, session *memory.Session) 
 	// Step 2: Extract candidate observations (Pass 1)
 	var allCandidates []string
 	for _, chunk := range chunks {
-		obs, usage, err := client.Converse(ctx, prompts.ReflectExtract, chunk, llm.WithMaxTokens(4096))
+		obs, usage, err := client.Converse(ctx, prompts.ReflectExtract, chunk, inference.WithMaxTokens(4096))
 		totalUsage = totalUsage.Add(usage)
 		if err != nil && obs == "" {
 			return "", totalUsage, err
@@ -296,7 +296,7 @@ func reflectOnSession(ctx context.Context, client LLM, session *memory.Session) 
 
 	// Step 3: Refine observations (Pass 2)
 	candidates := strings.Join(allCandidates, "\n\n")
-	refined, usage, err := client.Converse(ctx, prompts.ReflectRefine, candidates, llm.WithMaxTokens(4096))
+	refined, usage, err := client.Converse(ctx, prompts.ReflectRefine, candidates, inference.WithMaxTokens(4096))
 	totalUsage = totalUsage.Add(usage)
 	if err != nil {
 		return "", totalUsage, err
@@ -314,8 +314,8 @@ func isEmpty(s string) bool {
 
 // buildHumanFocusedView summarizes assistant messages and formats the conversation
 // as [context]/[human] pairs, chunked to fit within the token budget.
-func buildHumanFocusedView(ctx context.Context, client LLM, turns []turn) ([]string, llm.Usage, error) {
-	var totalUsage llm.Usage
+func buildHumanFocusedView(ctx context.Context, client LLM, turns []turn) ([]string, inference.Usage, error) {
+	var totalUsage inference.Usage
 	var chunks []string
 	var b strings.Builder
 
@@ -323,7 +323,7 @@ func buildHumanFocusedView(ctx context.Context, client LLM, turns []turn) ([]str
 		// Summarize the assistant's message into 1-2 structural sentences
 		var contextLine string
 		if t.assistantContent != "" {
-			summary, usage, err := client.Converse(ctx, prompts.ReflectSummarize, t.assistantContent, llm.WithMaxTokens(256))
+			summary, usage, err := client.Converse(ctx, prompts.ReflectSummarize, t.assistantContent, inference.WithMaxTokens(256))
 			totalUsage = totalUsage.Add(usage)
 			if err != nil {
 				// On error, fall back to a generic context marker
@@ -348,12 +348,12 @@ func buildHumanFocusedView(ctx context.Context, client LLM, turns []turn) ([]str
 	return chunks, totalUsage, nil
 }
 
-func learn(ctx context.Context, client LLM, store storage.Store, observations []string) (llm.Usage, error) {
+func learn(ctx context.Context, client LLM, store storage.Store, observations []string) (inference.Usage, error) {
 	if len(observations) == 0 {
-		return llm.Usage{}, nil
+		return inference.Usage{}, nil
 	}
 	input := strings.Join(observations, "\n\n---\n\n")
-	soul, usage, err := client.Converse(ctx, prompts.Learn, input, llm.WithThinking(16000))
+	soul, usage, err := client.Converse(ctx, prompts.Learn, input, inference.WithThinking(16000))
 	if err != nil {
 		return usage, err
 	}

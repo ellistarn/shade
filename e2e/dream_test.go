@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/ellistarn/muse/internal/dream"
-	"github.com/ellistarn/muse/internal/llm"
+	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/memory"
 	"github.com/ellistarn/muse/internal/storage"
 )
@@ -130,9 +130,9 @@ type llmCall struct {
 	user   string
 }
 
-func (m *mockLLM) Converse(_ context.Context, system, user string, _ ...llm.ConverseOption) (string, llm.Usage, error) {
+func (m *mockLLM) Converse(_ context.Context, system, user string, _ ...inference.ConverseOption) (string, inference.Usage, error) {
 	m.calls = append(m.calls, llmCall{system: system, user: user})
-	usage := llm.Usage{InputTokens: 100, OutputTokens: 50}
+	usage := inference.Usage{InputTokens: 100, OutputTokens: 50}
 	if strings.Contains(system, "distilling observations") {
 		return m.learnResponse, usage, nil
 	}

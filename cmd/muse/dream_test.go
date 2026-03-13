@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ellistarn/muse/internal/llm"
+	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/memory"
 	"github.com/ellistarn/muse/internal/storage"
 )
@@ -227,11 +227,11 @@ type testLLM struct {
 	err             error
 }
 
-func (m *testLLM) Converse(_ context.Context, system, _ string, _ ...llm.ConverseOption) (string, llm.Usage, error) {
+func (m *testLLM) Converse(_ context.Context, system, _ string, _ ...inference.ConverseOption) (string, inference.Usage, error) {
 	if m.err != nil {
-		return "", llm.Usage{}, m.err
+		return "", inference.Usage{}, m.err
 	}
-	usage := llm.Usage{InputTokens: 100, OutputTokens: 50}
+	usage := inference.Usage{InputTokens: 100, OutputTokens: 50}
 	if strings.Contains(system, "distilling observations") {
 		return m.learnResponse, usage, nil
 	}
