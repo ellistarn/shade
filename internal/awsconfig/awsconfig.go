@@ -18,7 +18,7 @@ var (
 // Load returns a shared AWS config, initializing it on first call.
 func Load(ctx context.Context) (aws.Config, error) {
 	once.Do(func() {
-		cached, err = config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
+		cached, err = config.LoadDefaultConfig(ctx)
 		if err != nil {
 			err = fmt.Errorf("failed to load AWS config: %w", err)
 		}
