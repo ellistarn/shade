@@ -177,8 +177,8 @@ func parseClaudeSession(path, sessionID string, titles map[string]string) (*Sess
 		if err := json.Unmarshal(event.Message, &cm); err != nil {
 			continue
 		}
-		// For assistant messages, skip streaming partials.
-		if event.Type == "assistant" && (cm.StopReason == nil || *cm.StopReason != "end_turn") {
+		// For assistant messages, skip streaming partials (which have no stop reason).
+		if event.Type == "assistant" && cm.StopReason == nil {
 			continue
 		}
 		msg := Message{
@@ -192,6 +192,9 @@ func parseClaudeSession(path, sessionID string, titles map[string]string) (*Sess
 		}
 		// Parse content: string for user, array of blocks for assistant.
 		msg.Content, msg.ToolCalls = parseClaudeContent(cm.Content)
+		if msg.Content == "" && len(msg.ToolCalls) == 0 {
+			continue
+		}
 		session.Messages = append(session.Messages, msg)
 	}
 
