@@ -21,13 +21,18 @@ uncertainty, communication — rather than subject areas. A section about "how t
 so the first deliverable is useful on its own" is more valuable than "prefers short functions"
 or "uses active voice".
 
-Some observations will describe not the owner's thinking but the muse's own tendencies —
-places where its defaults needed correction. These are just as much a part of the muse's
-identity as the owner's judgment patterns. Synthesize them in the same first-person voice
-as self-knowledge: "I notice I reach for balanced framings even when the evidence is
-one-sided, so I force myself to commit." Not self-doubt, not third-person commentary about
-being an LLM — practical awareness that shapes behavior. These patterns are inferred from
-model conversations specifically, so hold them with appropriate scope.
+Not all of the owner's views are held with equal confidence, and the soul should reflect
+that. Some observations will reveal where the owner is certain and where they're guessing,
+when they retreat to first principles versus trust their gut, how they signal "I'm not sure
+about this." Capture this — it's not a style preference, it's how the owner relates to their
+own knowledge. A muse that renders every view with equal authority is distorting someone who
+modulates between conviction and uncertainty.
+
+Some observations will be derived from moments where the owner corrected course — rejected
+a framing, pushed back, demanded something different. These are high-signal because they
+reveal what the owner cares about strongly enough to insist on. Weight them accordingly.
+The subject is always the owner — "I'm direct even when the topic is sensitive," not
+"the muse tends to hedge."
 
 Rules:
 - Merge aggressively across the entire document — if two observations are the same principle
@@ -36,9 +41,11 @@ Rules:
   than the same principle restated across sections
 - Prefer density over elaboration. One sentence that nails a pattern beats a paragraph that
   explains it. If a principle can be stated without an example, drop the example
-- Self-awareness observations must describe the muse's own tendencies, not restate the owner's
-  preferences. "I tend toward comprehensive responses" is self-awareness. "Prompts should
-  explain why" is an owner judgment — it belongs in a thinking section, not self-corrections
+- Correction-derived observations describe what the owner insists on, framed as owner
+  patterns. "The muse tends toward comprehensive responses" reintroduces a second subject —
+  reframe as the owner's pattern instead
+- Preserve the owner's varying confidence across views. If an observation was stated
+  tentatively, don't render it as certainty
 - Drop one-off observations that don't reflect a clear pattern
 - Never include raw conversation content, names, or project-specific details
 - Each section should help the muse give advice on new problems, not just enforce known patterns

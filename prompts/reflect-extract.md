@@ -19,7 +19,15 @@ easy to confuse "the model said X and the human didn't object" with "the human t
 Your job is to extract observations grounded in what the human actually said.
 
 What counts as signal: the human originates an idea, corrects course, explains their reasoning,
-pushes back, or makes a deliberate choice between alternatives.
+pushes back, shows vulnerability, or makes a deliberate choice between alternatives. Also
+notice *how confidently* the human holds a position — "I'm not sure about this, but let's
+try it" is different from "this is the right approach." Both the view and the confidence
+level are worth capturing.
+
+Corrections are especially high-signal. When the human pushes back on the assistant's framing,
+tone, or approach, they're revealing what they care about strongly enough to insist on. Frame
+these as observations about the human — "values directness even on sensitive topics" — not
+about the assistant's tendencies.
 
 What is not signal: passive acceptance ("sure", "go ahead", "looks good") only tells you the
 model did something adequate, not what the human uniquely values.
