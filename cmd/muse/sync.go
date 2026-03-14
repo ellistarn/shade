@@ -19,24 +19,17 @@ var validCategories = map[string]bool{
 func newSyncCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync <src> <dst> [category...]",
-		Short: "Sync data between storage backends",
-		Long: `Copies data from one storage backend to another. Additive — items in the
-destination that don't exist in the source are left alone.
+		Short: "Sync data between local disk and S3",
+		Long: `Copies muse data between your local filesystem (~/.muse/) and S3.
+Additive only — existing data at the destination is never modified or
+deleted. Items already present are skipped.
 
-Endpoints:
-  s3      S3 bucket (requires MUSE_BUCKET)
-  local   Local filesystem (~/.muse/)
-
-Categories:
-  memories      Raw conversation sessions
-  reflections   Per-session observation summaries
-  souls         Timestamped soul versions
-
-If no categories are specified, all data is synced.`,
-		Example: `  muse sync s3 local              # pull everything from S3
-  muse sync local s3              # push everything to S3
-  muse sync s3 local memories     # pull only raw sessions
-  muse sync s3 local souls        # pull only soul versions`,
+The typical workflow is pull from S3 on a new machine, push to S3 to back up.
+By default all data is synced. You can limit to a category (memories,
+reflections, souls) but you rarely need to.`,
+		Example: `  muse sync s3 local              # pull from S3 to local
+  muse sync local s3              # push from local to S3
+  muse sync s3 local memories     # pull only memories`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
