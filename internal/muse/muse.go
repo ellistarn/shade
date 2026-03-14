@@ -3,13 +3,13 @@ package muse
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
 	"github.com/ellistarn/muse/internal/bedrock"
 	"github.com/ellistarn/muse/internal/inference"
-	"github.com/ellistarn/muse/internal/log"
 	"github.com/ellistarn/muse/internal/memory"
 	"github.com/ellistarn/muse/internal/storage"
 	"github.com/ellistarn/muse/prompts"
@@ -59,9 +59,9 @@ func New(ctx context.Context, store storage.Store) (*Muse, error) {
 		soul = "" // no soul yet — first run before any dreams
 	}
 	if soul != "" {
-		log.Printf("Loaded soul (%d bytes)\n", len(soul))
+		slog.Debug("loaded soul", "bytes", len(soul))
 	} else {
-		log.Println("No soul found (run 'muse dream' to generate one)")
+		slog.Debug("no soul found")
 	}
 	return &Muse{
 		storage:  store,
@@ -142,18 +142,18 @@ func (m *Muse) Ask(ctx context.Context, input AskInput) (*AskResult, error) {
 
 // Upload scans local sources, diffs against storage, and uploads changed sessions.
 func (m *Muse) Upload(ctx context.Context) (*UploadResult, error) {
-	log.Println("Listing remote sessions...")
+	slog.Debug("listing remote sessions")
 	existing, err := m.storage.ListSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote sessions: %w", err)
 	}
-	log.Printf("Found %d remote sessions\n", len(existing))
+	slog.Debug("found remote sessions", "count", len(existing))
 	remote := map[string]storage.SessionEntry{}
 	for _, e := range existing {
 		remote[e.Key] = e
 	}
 
-	log.Println("Scanning local sessions...")
+	slog.Debug("scanning local sessions")
 	type result struct {
 		name     string
 		sessions []memory.Session
@@ -179,11 +179,11 @@ func (m *Muse) Upload(ctx context.Context) (*UploadResult, error) {
 			warnings = append(warnings, fmt.Sprintf("failed to read %s sessions: %v", r.name, r.err))
 			continue
 		}
-		log.Printf("Found %d %s sessions\n", len(r.sessions), r.name)
+		slog.Debug("found local sessions", "count", len(r.sessions), "source", r.name)
 		local = append(local, r.sessions...)
 	}
 
-	log.Printf("Diffing %d local sessions against remote...\n", len(local))
+	slog.Debug("diffing sessions", "local", len(local))
 	var uploaded, skipped int
 	var totalBytes int
 	for i := range local {
@@ -191,7 +191,7 @@ func (m *Muse) Upload(ctx context.Context) (*UploadResult, error) {
 		key := fmt.Sprintf("memories/%s/%s.json", sess.Source, sess.SessionID)
 		if entry, exists := remote[key]; exists {
 			if !sess.UpdatedAt.After(entry.LastModified) {
-				log.Printf("  skip (unchanged) %s\n", key)
+				slog.Debug("skip unchanged", "key", key)
 				skipped++
 				continue
 			}
@@ -201,7 +201,7 @@ func (m *Muse) Upload(ctx context.Context) (*UploadResult, error) {
 			warnings = append(warnings, fmt.Sprintf("failed to upload %s: %v", sess.SessionID, err))
 			continue
 		}
-		log.Printf("  upload (%s) %s\n", FormatBytes(n), key)
+		slog.Debug("upload", "size", FormatBytes(n), "key", key)
 		uploaded++
 		totalBytes += n
 	}

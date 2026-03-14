@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	muselog "github.com/ellistarn/muse/internal/log"
 	"github.com/ellistarn/muse/internal/storage"
 )
 
-var bucket string
+var (
+	bucket string
+	debug  bool
+)
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -35,8 +39,12 @@ Data is stored locally at ~/.muse/ by default. Set MUSE_BUCKET to use S3 instead
 Run "muse listen --help" for MCP server configuration.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			muselog.Init(debug)
+		},
 	}
 	cmd.PersistentFlags().StringVar(&bucket, "bucket", os.Getenv("MUSE_BUCKET"), "S3 bucket name (or set MUSE_BUCKET)")
+	cmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug logging")
 	cmd.AddCommand(newDreamCmd())
 	cmd.AddCommand(newSoulCmd())
 	cmd.AddCommand(newListenCmd())
@@ -49,13 +57,13 @@ Run "muse listen --help" for MCP server configuration.`,
 // otherwise a local filesystem store rooted at ~/.muse/.
 func newStore(ctx context.Context) (storage.Store, error) {
 	if bucket != "" {
-		fmt.Fprintf(os.Stderr, "Using S3 storage (bucket: %s)\n", bucket)
+		slog.Debug("using S3 storage", "bucket", bucket)
 		return storage.NewS3Store(ctx, bucket)
 	}
 	store, err := storage.NewLocalStore()
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(os.Stderr, "Using local storage at %s\n", store.Root())
+	slog.Debug("using local storage", "path", store.Root())
 	return store, nil
 }

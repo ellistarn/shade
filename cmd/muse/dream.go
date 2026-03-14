@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ellistarn/muse/internal/bedrock"
 	"github.com/ellistarn/muse/internal/dream"
 	"github.com/ellistarn/muse/internal/inference"
-	"github.com/ellistarn/muse/internal/log"
 	"github.com/ellistarn/muse/internal/muse"
 	"github.com/ellistarn/muse/internal/storage"
 )
@@ -69,7 +69,7 @@ reprocessing memories. Use --reflect to reprocess all memories from scratch.`,
 				if cerr != nil {
 					return cerr
 				}
-				log.Printf("Learning with %s\n", client.Model())
+				slog.Debug("learning", "model", client.Model())
 				return runDream(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, nil, client, true, false, 0)
 			}
 			reflectClient, err := bedrock.NewClient(ctx, bedrock.ModelSonnet)
@@ -80,7 +80,7 @@ reprocessing memories. Use --reflect to reprocess all memories from scratch.`,
 			if err != nil {
 				return err
 			}
-			log.Printf("Reflecting with %s, learning with %s\n", reflectClient.Model(), learnClient.Model())
+			slog.Debug("starting dream", "reflect_model", reflectClient.Model(), "learn_model", learnClient.Model())
 			return runDream(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, reflectClient, learnClient, false, reflect, limit)
 		},
 	}

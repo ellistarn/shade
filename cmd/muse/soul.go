@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ellistarn/muse/internal/bedrock"
 	"github.com/ellistarn/muse/internal/inference"
-	"github.com/ellistarn/muse/internal/log"
 	"github.com/ellistarn/muse/internal/storage"
 )
 
@@ -34,7 +34,7 @@ Use --diff to summarize what changed since the last dream.`,
 				return runDiff(cmd, store)
 			}
 
-			log.Println("Loading soul...")
+			slog.Debug("loading soul")
 			soul, err := store.GetSoul(ctx)
 			if err != nil {
 				if !storage.IsNotFound(err) {
@@ -55,7 +55,7 @@ Use --diff to summarize what changed since the last dream.`,
 func runDiff(cmd *cobra.Command, store storage.Store) error {
 	ctx := cmd.Context()
 
-	log.Println("Loading soul history...")
+	slog.Debug("loading soul history")
 	souls, err := store.ListSouls(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list soul history: %w", err)
@@ -65,7 +65,7 @@ func runDiff(cmd *cobra.Command, store storage.Store) error {
 	}
 	// Compare the second-to-last with the latest
 	prevTimestamp := souls[len(souls)-2]
-	log.Printf("Comparing snapshot %s with current soul\n", prevTimestamp)
+	slog.Debug("comparing snapshots", "prev", prevTimestamp)
 
 	prev, err := store.GetSoulVersion(ctx, prevTimestamp)
 	if err != nil {
@@ -78,14 +78,14 @@ func runDiff(cmd *cobra.Command, store storage.Store) error {
 		}
 		current = ""
 	}
-	log.Printf("Previous: %d bytes, Current: %d bytes\n", len(prev), len(current))
+	slog.Debug("diff sizes", "prev_bytes", len(prev), "current_bytes", len(current))
 
 	if prev == "" && current == "" {
 		fmt.Fprintln(cmd.OutOrStdout(), "No soul in either snapshot.")
 		return nil
 	}
 
-	log.Println("Generating diff summary...")
+	slog.Debug("generating diff summary")
 	llm, err := bedrock.NewClient(ctx, bedrock.ModelSonnet)
 	if err != nil {
 		return err
@@ -97,7 +97,7 @@ func runDiff(cmd *cobra.Command, store storage.Store) error {
 	if err != nil {
 		return fmt.Errorf("failed to generate diff summary: %w", err)
 	}
-	log.Printf("Diff complete ($%.4f)\n", usage.Cost())
+	slog.Debug("diff complete", "cost", fmt.Sprintf("$%.4f", usage.Cost()))
 	fmt.Fprintf(cmd.OutOrStdout(), "Changes since %s:\n\n%s\n", prevTimestamp, strings.TrimSpace(summary))
 	fmt.Fprintf(cmd.ErrOrStderr(), "tokens: %d in / %d out · $%.4f\n",
 		usage.InputTokens, usage.OutputTokens, usage.Cost())

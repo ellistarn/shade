@@ -3,6 +3,7 @@ package dream
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"github.com/ellistarn/muse/internal/inference"
-	"github.com/ellistarn/muse/internal/log"
 	"github.com/ellistarn/muse/internal/memory"
 	"github.com/ellistarn/muse/internal/storage"
 	"github.com/ellistarn/muse/prompts"
@@ -47,7 +47,7 @@ var estimateTokens = inference.EstimateTokens
 // processed; there is no separate state file.
 func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opts Options) (*Result, error) {
 	// List all memories and existing reflections
-	log.Println("Listing memories...")
+	slog.Debug("listing memories")
 	entries, err := store.ListSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list memories: %w", err)
@@ -60,7 +60,7 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 
 	// If reprocessing, clear all existing reflections
 	if opts.Reflect {
-		log.Println("Re-reflecting all memories (clearing existing reflections)")
+		slog.Debug("re-reflecting all memories")
 		if err := store.DeletePrefix(ctx, "reflections/"); err != nil {
 			return nil, fmt.Errorf("failed to clear reflections: %w", err)
 		}
@@ -83,17 +83,17 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 	})
 	totalPending := len(pending)
 	if opts.Limit > 0 && len(pending) > opts.Limit {
-		log.Printf("Found %d new memories, limiting to %d\n", len(pending), opts.Limit)
+		slog.Debug("limiting memories", "total", len(pending), "limit", opts.Limit)
 		pending = pending[:opts.Limit]
 	}
-	log.Printf("Found %d memories (%d new, %d already reflected)\n", len(entries), totalPending, pruned)
+	slog.Debug("found memories", "total", len(entries), "new", totalPending, "reflected", pruned)
 
 	var warnings []string
 	var reflectUsage inference.Usage
 
 	// Reflect on pending memories in parallel
 	if len(pending) > 0 {
-		log.Println("Estimating token usage...")
+		slog.Debug("estimating tokens")
 		var totalEstimate int
 		for _, entry := range pending {
 			session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
@@ -108,9 +108,9 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 			// Add estimate for extract + refine passes
 			totalEstimate += estimateTokens(prompts.ReflectExtract) + estimateTokens(prompts.ReflectRefine)
 		}
-		log.Printf("Estimated ~%dk input tokens for reflect phase\n", totalEstimate/1000)
+		slog.Debug("estimated reflect tokens", "tokens_k", totalEstimate/1000)
 
-		log.Printf("Reflecting on %d memories...\n", len(pending))
+		slog.Debug("reflecting", "memories", len(pending))
 		type mapResult struct {
 			key          string
 			observations string
@@ -132,7 +132,7 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 				if err != nil {
 					results[i] = mapResult{key: entry.Key, err: err}
 					n := completed.Add(1)
-					log.Printf("  [%d/%d] (error) %s\n", n, len(pending), entry.Key)
+					slog.Debug("reflect error", "n", n, "total", len(pending), "key", entry.Key, "err", err)
 					return
 				}
 				msgs := len(session.Messages)
@@ -140,10 +140,11 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 				results[i] = mapResult{key: entry.Key, observations: obs, usage: usage, err: err}
 				n := completed.Add(1)
 				if err != nil {
-					log.Printf("  [%d/%d] (%d msgs) error: %v %s\n", n, len(pending), msgs, err, entry.Key)
+					slog.Debug("reflect failed", "n", n, "total", len(pending), "msgs", msgs, "err", err, "key", entry.Key)
 				} else {
-					log.Printf("  [%d/%d] (%d msgs, %d in / %d out tokens, $%.4f) %s\n",
-						n, len(pending), msgs, usage.InputTokens, usage.OutputTokens, usage.Cost(), entry.Key)
+					slog.Debug("reflect done", "n", n, "total", len(pending), "msgs", msgs,
+						"input_tokens", usage.InputTokens, "output_tokens", usage.OutputTokens,
+						"cost", fmt.Sprintf("$%.4f", usage.Cost()), "key", entry.Key)
 				}
 			}(i, entry)
 		}
@@ -160,12 +161,12 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 				warnings = append(warnings, fmt.Sprintf("failed to save reflection for %s: %v", r.key, err))
 			}
 		}
-		log.Printf("Reflected on %d memories ($%.4f)\n", len(pending)-len(warnings), reflectUsage.Cost())
+		slog.Debug("reflect complete", "memories", len(pending)-len(warnings), "cost", fmt.Sprintf("$%.4f", reflectUsage.Cost()))
 	}
 
 	remaining := totalPending - len(pending)
 	if remaining > 0 {
-		log.Printf("%d memories still pending reflection (run dream again to continue)\n", remaining)
+		slog.Debug("memories still pending", "remaining", remaining)
 	}
 
 	// Learn from ALL reflections (not just new ones)
@@ -177,12 +178,12 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 		return &Result{Pruned: pruned, Remaining: remaining, Warnings: warnings}, nil
 	}
 
-	log.Printf("Distilling soul from %d reflections...\n", len(allReflections))
+	slog.Debug("distilling soul", "reflections", len(allReflections))
 	soul, learnUsage, err := learn(ctx, learnLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
-	log.Printf("Soul distilled ($%.4f)\n", learnUsage.Cost())
+	slog.Debug("soul distilled", "cost", fmt.Sprintf("$%.4f", learnUsage.Cost()))
 
 	processed := len(pending) - len(warnings)
 	if processed < 0 {
@@ -209,12 +210,12 @@ func LearnOnly(ctx context.Context, store storage.Store, learnLLM LLM) (*Result,
 		return &Result{}, nil
 	}
 
-	log.Printf("Re-distilling soul from %d reflections...\n", len(allReflections))
+	slog.Debug("re-distilling soul", "reflections", len(allReflections))
 	soul, usage, err := learn(ctx, learnLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
-	log.Printf("Soul distilled ($%.4f)\n", usage.Cost())
+	slog.Debug("soul distilled", "cost", fmt.Sprintf("$%.4f", usage.Cost()))
 
 	return &Result{
 		Usage:    usage,
@@ -226,7 +227,7 @@ func LearnOnly(ctx context.Context, store storage.Store, learnLLM LLM) (*Result,
 // writeSoul writes a new timestamped soul version.
 func writeSoul(ctx context.Context, store storage.Store, soul string) error {
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	log.Printf("Writing soul to souls/%s/...\n", timestamp)
+	slog.Debug("writing soul", "timestamp", timestamp)
 	return store.PutSoul(ctx, timestamp, soul)
 }
 

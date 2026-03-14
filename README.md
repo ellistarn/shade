@@ -13,8 +13,10 @@ go install github.com/ellistarn/muse/cmd/muse@latest
 ## Getting Started
 
 ```bash
-muse dream             # discover memories and distill soul.md
-muse soul              # print soul.md
+muse dream                # discover memories and distill soul.md
+muse soul                 # print soul.md
+muse ask "your question"  # ask your muse directly
+muse listen               # start MCP server
 ```
 
 Wire up the MCP server so agents can ask your muse questions:
@@ -46,6 +48,11 @@ environment variable:
 
 ```bash
 export MUSE_BUCKET=$USER-muse
+```
+
+```bash
+muse sync local s3          # push everything to S3
+muse sync s3 local memories # pull memories from S3
 ```
 
 Run `muse --help` for detailed usage.

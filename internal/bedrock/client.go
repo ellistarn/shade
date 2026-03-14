@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -20,7 +21,6 @@ import (
 
 	"github.com/ellistarn/muse/internal/awsconfig"
 	"github.com/ellistarn/muse/internal/inference"
-	"github.com/ellistarn/muse/internal/log"
 )
 
 const (
@@ -129,7 +129,7 @@ func resolveModel(ctx context.Context, cfg aws.Config, family string) (string, e
 		return "", fmt.Errorf("no US inference profile found for %q", family)
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(candidates)))
-	log.Printf("discovered model %s -> %s\n", family, candidates[0])
+	slog.Debug("resolved model", "family", family, "model", candidates[0])
 	return candidates[0], nil
 }
 
@@ -328,7 +328,7 @@ func (c *Client) retryThrottled(ctx context.Context, fn func() error) error {
 		}
 		lastErr = err
 		backoff := backoffDuration(attempt)
-		log.Printf("  throttled (attempt %d/%d), backing off %s\n", attempt+1, maxRetries, backoff.Round(time.Millisecond))
+		slog.Debug("throttled", "attempt", attempt+1, "max_retries", maxRetries, "backoff", backoff.Round(time.Millisecond))
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
