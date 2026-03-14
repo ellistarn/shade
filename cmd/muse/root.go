@@ -16,13 +16,13 @@ func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "muse",
 		Short: "The distilled essence of how you think",
-		Long: `A muse absorbs your memories from agent interactions, distills them into a
-muse document, and embodies your unique thought processes when asked questions.
+		Long: `A muse absorbs your memories from agent interactions, distills them into
+muse.md, and embodies your unique thought processes when asked questions.
 
 Workflow:
 
-  1. muse dream      Discover memories, reflect, and distill a muse document
-  2. muse show       Print the muse document
+  1. muse dream      Discover memories, reflect, and distill muse.md
+  2. muse show       Print muse.md
   3. muse ask        Ask your muse a question (stateless, one-shot)
   4. muse listen     Start an MCP server so agents can ask your muse
 

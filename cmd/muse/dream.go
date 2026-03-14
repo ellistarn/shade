@@ -22,13 +22,13 @@ func newDreamCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dream",
 		Short: "Distill a muse from memories",
-		Long: `Discovers new memories, reflects on them, and distills a muse document
-(muse.md) that captures how you think. Safe to run repeatedly — only new
+		Long: `Discovers new memories, reflects on them, and distills a muse.md
+that captures how you think. Safe to run repeatedly — only new
 memories are discovered and only unreflected memories are processed. The
 muse is always re-distilled.
 
 The pipeline is a map-reduce: reflect maps each memory into observations,
-then learn reduces all observations into a single muse document.
+then learn reduces all observations into a single muse.md.
 
 Use --learn to re-distill the muse from existing reflections without
 reprocessing memories. Use --reflect to reprocess all memories from scratch.`,

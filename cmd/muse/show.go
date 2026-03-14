@@ -17,7 +17,7 @@ func newShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show",
 		Short: "Print muse.md",
-		Long: `Prints your current muse document to stdout. If no muse exists yet, prompts
+		Long: `Prints your current muse.md to stdout. If no muse exists yet, prompts
 you to run 'muse dream'.
 
 Use --diff to summarize what changed since the last dream.`,
