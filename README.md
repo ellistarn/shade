@@ -13,9 +13,9 @@ go install github.com/ellistarn/muse/cmd/muse@latest
 
 ```bash
 muse dream                # discover memories and distill muse.md
-muse show                 # print muse.md
 muse ask "your question"  # ask your muse directly
 muse listen               # start MCP server
+muse show                 # print muse.md
 ```
 
 Wire up the MCP server so agents can ask your muse questions:
