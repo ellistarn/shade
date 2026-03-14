@@ -19,8 +19,6 @@ import (
 	"github.com/ellistarn/muse/internal/memory"
 )
 
-const soulKey = "soul.md"
-
 // S3Store implements Store backed by an S3 bucket.
 type S3Store struct {
 	s3     *s3.Client
@@ -112,29 +110,25 @@ func (c *S3Store) GetSession(ctx context.Context, src, sessionID string) (*memor
 	return &session, nil
 }
 
-// GetSoul downloads the soul document from S3.
+// GetSoul returns the latest soul version by finding the most recent timestamp.
 func (c *S3Store) GetSoul(ctx context.Context) (string, error) {
-	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &c.bucket,
-		Key:    aws.String(soulKey),
-	})
+	timestamps, err := c.ListSouls(ctx)
 	if err != nil {
-		return "", wrapS3NotFound(err, soulKey)
+		return "", err
 	}
-	defer out.Body.Close()
-	data, err := io.ReadAll(out.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read soul: %w", err)
+	if len(timestamps) == 0 {
+		return "", &NotFoundError{Key: "souls/"}
 	}
-	return string(data), nil
+	return c.GetSoulVersion(ctx, timestamps[len(timestamps)-1])
 }
 
-// PutSoul writes the soul document to S3.
-func (c *S3Store) PutSoul(ctx context.Context, content string) error {
+// PutSoul writes a soul version at the given timestamp.
+func (c *S3Store) PutSoul(ctx context.Context, timestamp, content string) error {
+	key := soulVersionKey(timestamp)
 	contentType := "text/markdown"
 	_, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      &c.bucket,
-		Key:         aws.String(soulKey),
+		Key:         &key,
 		Body:        bytes.NewReader([]byte(content)),
 		ContentType: &contentType,
 	})
@@ -144,25 +138,51 @@ func (c *S3Store) PutSoul(ctx context.Context, content string) error {
 	return nil
 }
 
-// SnapshotSoul copies the current soul to dreams/history/{timestamp}/soul.md.
-func (c *S3Store) SnapshotSoul(ctx context.Context, timestamp string) error {
-	dstKey := fmt.Sprintf("dreams/history/%s/soul.md", timestamp)
-	copySource := fmt.Sprintf("%s/%s", c.bucket, soulKey)
-	_, err := c.s3.CopyObject(ctx, &s3.CopyObjectInput{
-		Bucket:     &c.bucket,
-		CopySource: &copySource,
-		Key:        &dstKey,
+// ListSouls returns timestamps of all soul versions, sorted ascending.
+func (c *S3Store) ListSouls(ctx context.Context) ([]string, error) {
+	prefix := "souls/"
+	out, err := c.s3.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket:    &c.bucket,
+		Prefix:    aws.String(prefix),
+		Delimiter: aws.String("/"),
 	})
 	if err != nil {
-		return fmt.Errorf("failed to snapshot soul: %w", err)
+		return nil, fmt.Errorf("failed to list souls: %w", err)
 	}
-	return nil
+	var timestamps []string
+	for _, cp := range out.CommonPrefixes {
+		p := aws.ToString(cp.Prefix)
+		p = strings.TrimPrefix(p, prefix)
+		p = strings.TrimSuffix(p, "/")
+		if p != "" {
+			timestamps = append(timestamps, p)
+		}
+	}
+	sort.Strings(timestamps)
+	return timestamps, nil
 }
 
-// PutReflection writes a reflection to S3 under dreams/reflections/{key}.md.
+// GetSoulVersion downloads a specific soul version from S3.
+func (c *S3Store) GetSoulVersion(ctx context.Context, timestamp string) (string, error) {
+	key := soulVersionKey(timestamp)
+	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &c.bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		return "", wrapS3NotFound(err, key)
+	}
+	defer out.Body.Close()
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read soul version %s: %w", timestamp, err)
+	}
+	return string(data), nil
+}
+
+// PutReflection writes a reflection to S3 under reflections/{source}/{session}.md.
 func (c *S3Store) PutReflection(ctx context.Context, key, content string) error {
-	// Replace the memories/ prefix so reflections mirror the memory layout
-	path := fmt.Sprintf("dreams/reflections/%s.md", strings.TrimPrefix(strings.TrimSuffix(key, ".json"), "memories/"))
+	path := reflectionKey(key)
 	contentType := "text/markdown"
 	_, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      &c.bucket,
@@ -176,12 +196,12 @@ func (c *S3Store) PutReflection(ctx context.Context, key, content string) error 
 	return nil
 }
 
-// ListReflections returns the keys of all persisted reflections under dreams/reflections/.
+// ListReflections returns the keys of all persisted reflections under reflections/.
 func (c *S3Store) ListReflections(ctx context.Context) (map[string]time.Time, error) {
 	reflections := map[string]time.Time{}
 	paginator := s3.NewListObjectsV2Paginator(c.s3, &s3.ListObjectsV2Input{
 		Bucket: &c.bucket,
-		Prefix: aws.String("dreams/reflections/"),
+		Prefix: aws.String("reflections/"),
 	})
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
@@ -189,10 +209,8 @@ func (c *S3Store) ListReflections(ctx context.Context) (map[string]time.Time, er
 			return nil, fmt.Errorf("failed to list reflections: %w", err)
 		}
 		for _, obj := range page.Contents {
-			// Convert dreams/reflections/opencode/ses_abc.md back to memories/opencode/ses_abc.json
 			key := aws.ToString(obj.Key)
-			memoryKey := strings.TrimPrefix(key, "dreams/reflections/")
-			memoryKey = "memories/" + strings.TrimSuffix(memoryKey, ".md") + ".json"
+			memoryKey := reflectionKeyToMemoryKey(key)
 			reflections[memoryKey] = aws.ToTime(obj.LastModified)
 		}
 	}
@@ -201,7 +219,7 @@ func (c *S3Store) ListReflections(ctx context.Context) (map[string]time.Time, er
 
 // GetReflection downloads a reflection's content from S3.
 func (c *S3Store) GetReflection(ctx context.Context, memoryKey string) (string, error) {
-	path := fmt.Sprintf("dreams/reflections/%s.md", strings.TrimPrefix(strings.TrimSuffix(memoryKey, ".json"), "memories/"))
+	path := reflectionKey(memoryKey)
 	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &c.bucket,
 		Key:    &path,
@@ -241,49 +259,6 @@ func (c *S3Store) DeletePrefix(ctx context.Context, prefix string) error {
 	return nil
 }
 
-// ListDreams returns timestamps of all dream snapshots, sorted ascending.
-func (c *S3Store) ListDreams(ctx context.Context) ([]string, error) {
-	prefix := "dreams/history/"
-	out, err := c.s3.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-		Bucket:    &c.bucket,
-		Prefix:    aws.String(prefix),
-		Delimiter: aws.String("/"),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list dreams: %w", err)
-	}
-	var timestamps []string
-	for _, cp := range out.CommonPrefixes {
-		p := aws.ToString(cp.Prefix)
-		// "dreams/history/2026-03-11T16:30:00Z/" -> "2026-03-11T16:30:00Z"
-		p = strings.TrimPrefix(p, prefix)
-		p = strings.TrimSuffix(p, "/")
-		if p != "" {
-			timestamps = append(timestamps, p)
-		}
-	}
-	sort.Strings(timestamps)
-	return timestamps, nil
-}
-
-// GetDreamSoul loads the soul from a specific dream snapshot.
-func (c *S3Store) GetDreamSoul(ctx context.Context, timestamp string) (string, error) {
-	key := fmt.Sprintf("dreams/history/%s/soul.md", timestamp)
-	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &c.bucket,
-		Key:    &key,
-	})
-	if err != nil {
-		return "", wrapS3NotFound(err, key)
-	}
-	defer out.Body.Close()
-	data, err := io.ReadAll(out.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read dream soul for %s: %w", timestamp, err)
-	}
-	return string(data), nil
-}
-
 // wrapS3NotFound converts S3 NoSuchKey errors to NotFoundError.
 func wrapS3NotFound(err error, key string) error {
 	var nsk *s3types.NoSuchKey
@@ -299,7 +274,6 @@ func sessionKey(src, sessionID string) string {
 
 // parseSessionKey extracts source and session ID from a key like "memories/opencode/ses_abc.json".
 func parseSessionKey(key string) (src, sessionID string) {
-	// key format: memories/{source}/{session_id}.json
 	key = strings.TrimPrefix(key, "memories/")
 	parts := strings.SplitN(key, "/", 2)
 	if len(parts) != 2 {
@@ -311,4 +285,21 @@ func parseSessionKey(key string) (src, sessionID string) {
 		return "", ""
 	}
 	return src, sessionID
+}
+
+func soulVersionKey(timestamp string) string {
+	return fmt.Sprintf("souls/%s/soul.md", timestamp)
+}
+
+// reflectionKey converts a memory key to its reflection storage key.
+// memories/opencode/ses_abc.json -> reflections/opencode/ses_abc.md
+func reflectionKey(memoryKey string) string {
+	return fmt.Sprintf("reflections/%s.md", strings.TrimPrefix(strings.TrimSuffix(memoryKey, ".json"), "memories/"))
+}
+
+// reflectionKeyToMemoryKey converts a reflection storage key back to a memory key.
+// reflections/opencode/ses_abc.md -> memories/opencode/ses_abc.json
+func reflectionKeyToMemoryKey(key string) string {
+	rel := strings.TrimPrefix(key, "reflections/")
+	return "memories/" + strings.TrimSuffix(rel, ".md") + ".json"
 }

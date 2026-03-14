@@ -62,7 +62,7 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 	// If reprocessing, clear all existing reflections
 	if opts.Reflect {
 		log.Println("Re-reflecting all memories (clearing existing reflections)")
-		if err := store.DeletePrefix(ctx, "dreams/reflections/"); err != nil {
+		if err := store.DeletePrefix(ctx, "reflections/"); err != nil {
 			return nil, fmt.Errorf("failed to clear reflections: %w", err)
 		}
 		reflections = map[string]time.Time{}
@@ -222,17 +222,11 @@ func LearnOnly(ctx context.Context, store storage.Store, learnLLM LLM) (*Result,
 	}, nil
 }
 
-// writeSoul snapshots the existing soul and writes the new one.
+// writeSoul writes a new timestamped soul version.
 func writeSoul(ctx context.Context, store storage.Store, soul string) error {
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	log.Printf("Snapshotting previous soul to dreams/history/%s/...\n", timestamp)
-	if err := store.SnapshotSoul(ctx, timestamp); err != nil {
-		log.Printf("Snapshot skipped (expected on first dream): %v\n", err)
-	} else {
-		log.Printf("Snapshot saved\n")
-	}
-	log.Println("Writing soul to storage...")
-	return store.PutSoul(ctx, soul)
+	log.Printf("Writing soul to souls/%s/...\n", timestamp)
+	return store.PutSoul(ctx, timestamp, soul)
 }
 
 // loadAllReflections fetches every persisted reflection from storage.

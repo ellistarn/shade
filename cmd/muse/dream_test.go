@@ -173,21 +173,20 @@ func (s *testStore) PutReflection(_ context.Context, key, content string) error 
 	return nil
 }
 func (s *testStore) DeletePrefix(_ context.Context, prefix string) error {
-	if prefix == "dreams/reflections/" {
+	if prefix == "reflections/" {
 		s.reflections = map[string]string{}
 	}
 	return nil
 }
-func (s *testStore) PutSoul(_ context.Context, content string) error {
+func (s *testStore) PutSoul(_ context.Context, _, content string) error {
 	s.soul = content
 	return nil
 }
-func (s *testStore) SnapshotSoul(_ context.Context, _ string) error { return nil }
-func (s *testStore) ListDreams(_ context.Context) ([]string, error) {
+func (s *testStore) ListSouls(_ context.Context) ([]string, error) {
 	return nil, nil
 }
-func (s *testStore) GetDreamSoul(_ context.Context, _ string) (string, error) {
-	return "", &storage.NotFoundError{Key: "dream"}
+func (s *testStore) GetSoulVersion(_ context.Context, _ string) (string, error) {
+	return "", &storage.NotFoundError{Key: "soul"}
 }
 
 // failingStore implements storage.Store where all operations return an error.
@@ -211,12 +210,11 @@ func (s *failingStore) GetReflection(_ context.Context, _ string) (string, error
 }
 func (s *failingStore) PutReflection(_ context.Context, _, _ string) error { return s.err }
 func (s *failingStore) DeletePrefix(_ context.Context, _ string) error     { return s.err }
-func (s *failingStore) PutSoul(_ context.Context, _ string) error          { return s.err }
-func (s *failingStore) SnapshotSoul(_ context.Context, _ string) error     { return s.err }
-func (s *failingStore) ListDreams(_ context.Context) ([]string, error) {
+func (s *failingStore) PutSoul(_ context.Context, _, _ string) error       { return s.err }
+func (s *failingStore) ListSouls(_ context.Context) ([]string, error) {
 	return nil, s.err
 }
-func (s *failingStore) GetDreamSoul(_ context.Context, _ string) (string, error) {
+func (s *failingStore) GetSoulVersion(_ context.Context, _ string) (string, error) {
 	return "", s.err
 }
 

@@ -53,22 +53,23 @@ Use --diff to summarize what changed since the last dream.`,
 func runDiff(cmd *cobra.Command, store storage.Store) error {
 	ctx := cmd.Context()
 
-	log.Println("Loading dream history...")
-	dreams, err := store.ListDreams(ctx)
+	log.Println("Loading soul history...")
+	souls, err := store.ListSouls(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to list dream history: %w", err)
+		return fmt.Errorf("failed to list soul history: %w", err)
 	}
-	if len(dreams) == 0 {
-		return fmt.Errorf("no dream history found; run 'muse dream' to create a snapshot")
+	if len(souls) < 2 {
+		return fmt.Errorf("need at least 2 soul versions to diff; only found %d", len(souls))
 	}
-	latest := dreams[len(dreams)-1]
-	log.Printf("Comparing snapshot %s with current soul\n", latest)
+	// Compare the second-to-last with the latest
+	prevTimestamp := souls[len(souls)-2]
+	log.Printf("Comparing snapshot %s with current soul\n", prevTimestamp)
 
-	prev, err := store.GetDreamSoul(ctx, latest)
+	prev, err := store.GetSoulVersion(ctx, prevTimestamp)
 	if err != nil {
-		return fmt.Errorf("failed to load dream snapshot %s: %w", latest, err)
+		return fmt.Errorf("failed to load soul version %s: %w", prevTimestamp, err)
 	}
-	current, err := store.GetSoul(ctx)
+	current, err := store.GetSoulVersion(ctx, souls[len(souls)-1])
 	if err != nil {
 		if !storage.IsNotFound(err) {
 			return fmt.Errorf("failed to load current soul: %w", err)
@@ -95,6 +96,6 @@ func runDiff(cmd *cobra.Command, store storage.Store) error {
 		return fmt.Errorf("failed to generate diff summary: %w", err)
 	}
 	log.Printf("Diff complete ($%.4f)\n", usage.Cost())
-	fmt.Fprintf(cmd.OutOrStdout(), "Changes since %s:\n\n%s\n", latest, strings.TrimSpace(summary))
+	fmt.Fprintf(cmd.OutOrStdout(), "Changes since %s:\n\n%s\n", prevTimestamp, strings.TrimSpace(summary))
 	return nil
 }
