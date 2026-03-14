@@ -116,7 +116,7 @@ func TestAskEmptyMuse(t *testing.T) {
 	if len(runtime.calls) != 1 {
 		t.Fatalf("Bedrock calls = %d, want 1", len(runtime.calls))
 	}
-	if !strings.Contains(runtime.calls[0].system, "No muse document available") {
+	if !strings.Contains(runtime.calls[0].system, "No muse available") {
 		t.Error("system prompt should indicate no muse available")
 	}
 }

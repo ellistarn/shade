@@ -117,14 +117,14 @@ func (l *LocalStore) GetMuse(_ context.Context) (string, error) {
 		return "", err
 	}
 	if len(timestamps) == 0 {
-		return "", &NotFoundError{Key: "muses/"}
+		return "", &NotFoundError{Key: "muse/versions/"}
 	}
 	return l.GetMuseVersion(context.Background(), timestamps[len(timestamps)-1])
 }
 
 // PutMuse writes a muse version at the given timestamp.
 func (l *LocalStore) PutMuse(_ context.Context, timestamp, content string) error {
-	path := filepath.Join(l.root, "muses", timestamp, "muse.md")
+	path := filepath.Join(l.root, "muse", "versions", timestamp, "muse.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
@@ -133,13 +133,13 @@ func (l *LocalStore) PutMuse(_ context.Context, timestamp, content string) error
 
 // ListMuses returns timestamps of all muse versions, sorted ascending.
 func (l *LocalStore) ListMuses(_ context.Context) ([]string, error) {
-	musesDir := filepath.Join(l.root, "muses")
+	musesDir := filepath.Join(l.root, "muse", "versions")
 	entries, err := os.ReadDir(musesDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to list muses: %w", err)
+		return nil, fmt.Errorf("failed to list muse versions: %w", err)
 	}
 	var timestamps []string
 	for _, e := range entries {
@@ -153,7 +153,7 @@ func (l *LocalStore) ListMuses(_ context.Context) ([]string, error) {
 
 // GetMuseVersion reads a specific muse version.
 func (l *LocalStore) GetMuseVersion(_ context.Context, timestamp string) (string, error) {
-	path := filepath.Join(l.root, "muses", timestamp, "muse.md")
+	path := filepath.Join(l.root, "muse", "versions", timestamp, "muse.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

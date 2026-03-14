@@ -15,7 +15,7 @@ import (
 //
 //	memories/{source}/{session_id}.json   — raw conversation sessions
 //	reflections/{source}/{session_id}.md  — per-session observation summaries
-//	muses/{timestamp}/muse.md             — timestamped muse versions (latest = current)
+//	muse/versions/{timestamp}/muse.md     — timestamped muse versions (latest = current)
 type Store interface {
 	// Memories
 	ListSessions(ctx context.Context) ([]SessionEntry, error)

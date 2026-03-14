@@ -91,7 +91,7 @@ func runDiff(cmd *cobra.Command, store storage.Store) error {
 		return err
 	}
 
-	prompt := `Compare the previous and current muse documents. Summarize what changed in a few concise bullet points: which sections were added, removed, or meaningfully revised. Focus on substance, not formatting.`
+	prompt := `Compare the previous and current versions of this muse. Summarize what changed in a few concise bullet points: which sections were added, removed, or meaningfully revised. Focus on substance, not formatting.`
 
 	summary, usage, err := llm.Converse(ctx, prompt, "Previous:\n\n"+prev+"\n\n---\n\nCurrent:\n\n"+current)
 	if err != nil {

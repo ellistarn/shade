@@ -42,7 +42,7 @@ type AskResult struct {
 type Muse struct {
 	storage  storage.Store
 	bedrock  *bedrock.Client
-	soul     string // the full muse document, loaded at init
+	soul     string // the full muse.md, loaded at init
 	sessions *sessionStore
 }
 
@@ -102,7 +102,7 @@ func (m *Muse) Ask(ctx context.Context, input AskInput) (*AskResult, error) {
 		// New conversation
 		soul := m.soul
 		if soul == "" {
-			soul = "No muse document available yet. Run 'muse dream' to generate one from memories."
+			soul = "No muse available yet. Run 'muse dream' to generate one from memories."
 		}
 		session = &Session{
 			System: fmt.Sprintf(systemPrompt, soul),
@@ -225,7 +225,7 @@ func FormatBytes(b int) string {
 	}
 }
 
-// Document returns the current muse document for use by the MCP handler.
+// Document returns the current muse.md for use by the MCP handler.
 func (m *Muse) Document() string {
 	return m.soul
 }

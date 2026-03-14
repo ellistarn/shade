@@ -27,7 +27,7 @@ type Result struct {
 	Pruned    int
 	Remaining int // memories still pending reflection
 	Usage     inference.Usage
-	Muse      string // the distilled muse document
+	Muse      string // the distilled muse.md
 	Warnings  []string
 }
 
@@ -226,7 +226,7 @@ func LearnOnly(ctx context.Context, store storage.Store, learnLLM LLM) (*Result,
 // writeMuse writes a new timestamped muse version.
 func writeMuse(ctx context.Context, store storage.Store, muse string) error {
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	log.Printf("Writing muse to muses/%s/...\n", timestamp)
+	log.Printf("Writing muse to muse/versions/%s/...\n", timestamp)
 	return store.PutMuse(ctx, timestamp, muse)
 }
 

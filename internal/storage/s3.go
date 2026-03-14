@@ -117,7 +117,7 @@ func (c *S3Store) GetMuse(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if len(timestamps) == 0 {
-		return "", &NotFoundError{Key: "muses/"}
+		return "", &NotFoundError{Key: "muse/versions/"}
 	}
 	return c.GetMuseVersion(ctx, timestamps[len(timestamps)-1])
 }
@@ -140,14 +140,14 @@ func (c *S3Store) PutMuse(ctx context.Context, timestamp, content string) error 
 
 // ListMuses returns timestamps of all muse versions, sorted ascending.
 func (c *S3Store) ListMuses(ctx context.Context) ([]string, error) {
-	prefix := "muses/"
+	prefix := "muse/versions/"
 	out, err := c.s3.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 		Bucket:    &c.bucket,
 		Prefix:    aws.String(prefix),
 		Delimiter: aws.String("/"),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list muses: %w", err)
+		return nil, fmt.Errorf("failed to list muse versions: %w", err)
 	}
 	var timestamps []string
 	for _, cp := range out.CommonPrefixes {
@@ -288,7 +288,7 @@ func parseSessionKey(key string) (src, sessionID string) {
 }
 
 func museVersionKey(timestamp string) string {
-	return fmt.Sprintf("muses/%s/muse.md", timestamp)
+	return fmt.Sprintf("muse/versions/%s/muse.md", timestamp)
 }
 
 // reflectionKey converts a memory key to its reflection storage key.

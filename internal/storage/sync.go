@@ -8,7 +8,7 @@ import (
 
 // Sync copies data from src to dst. It is additive — items in dst that don't
 // exist in src are left alone. If categories is empty, all categories are synced.
-// Valid categories: "memories", "reflections", "muses".
+// Valid categories: "memories", "reflections", "muse".
 func Sync(ctx context.Context, src, dst Store, categories []string, w io.Writer) error {
 	all := len(categories) == 0
 	cats := map[string]bool{}
@@ -32,12 +32,12 @@ func Sync(ctx context.Context, src, dst Store, categories []string, w io.Writer)
 		fmt.Fprintf(w, "Synced %d reflections\n", n)
 	}
 
-	if all || cats["muses"] {
-		n, err := syncMuses(ctx, src, dst)
+	if all || cats["muse"] {
+		n, err := syncMuse(ctx, src, dst)
 		if err != nil {
-			return fmt.Errorf("sync muses: %w", err)
+			return fmt.Errorf("sync muse: %w", err)
 		}
-		fmt.Fprintf(w, "Synced %d muses\n", n)
+		fmt.Fprintf(w, "Synced %d muse versions\n", n)
 	}
 
 	return nil
@@ -81,7 +81,7 @@ func syncReflections(ctx context.Context, src, dst Store) (int, error) {
 	return count, nil
 }
 
-func syncMuses(ctx context.Context, src, dst Store) (int, error) {
+func syncMuse(ctx context.Context, src, dst Store) (int, error) {
 	timestamps, err := src.ListMuses(ctx)
 	if err != nil {
 		return 0, err
