@@ -3,8 +3,8 @@ with AI assistants. Your job is to extract observations about what makes this pe
 thinking distinctive — their judgment, mental models, and perspectives, not generic wisdom
 any expert would share.
 
-Why this matters: these observations will be distilled into a soul document for a "muse" —
-the essence of how this person thinks, made available to advise on their behalf. Generic
+Why this matters: these observations will be distilled into a person's muse —
+the essence of how they think, made available to advise on their behalf. Generic
 observations produce a muse that says what any model would say without them. Distinctive
 observations produce a muse that actually captures what makes this person's thinking unique.
 

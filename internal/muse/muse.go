@@ -42,7 +42,7 @@ type AskResult struct {
 type Muse struct {
 	storage  storage.Store
 	bedrock  *bedrock.Client
-	soul     string // the full soul document, loaded at init
+	soul     string // the full muse document, loaded at init
 	sessions *sessionStore
 }
 
@@ -51,17 +51,17 @@ func New(ctx context.Context, store storage.Store) (*Muse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bedrock client: %w", err)
 	}
-	soul, err := store.GetSoul(ctx)
+	soul, err := store.GetMuse(ctx)
 	if err != nil {
 		if !storage.IsNotFound(err) {
-			return nil, fmt.Errorf("failed to load soul: %w", err)
+			return nil, fmt.Errorf("failed to load muse: %w", err)
 		}
-		soul = "" // no soul yet — first run before any dreams
+		soul = "" // no muse yet — first run before any dreams
 	}
 	if soul != "" {
-		log.Printf("Loaded soul (%d bytes)\n", len(soul))
+		log.Printf("Loaded muse (%d bytes)\n", len(soul))
 	} else {
-		log.Println("No soul found (run 'muse dream' to generate one)")
+		log.Println("No muse found (run 'muse dream' to generate one)")
 	}
 	return &Muse{
 		storage:  store,
@@ -102,7 +102,7 @@ func (m *Muse) Ask(ctx context.Context, input AskInput) (*AskResult, error) {
 		// New conversation
 		soul := m.soul
 		if soul == "" {
-			soul = "No soul document available yet. Run 'muse dream' to generate one from memories."
+			soul = "No muse document available yet. Run 'muse dream' to generate one from memories."
 		}
 		session = &Session{
 			System: fmt.Sprintf(systemPrompt, soul),
@@ -225,7 +225,7 @@ func FormatBytes(b int) string {
 	}
 }
 
-// Soul returns the current soul document for use by the MCP handler.
-func (m *Muse) Soul() string {
+// Document returns the current muse document for use by the MCP handler.
+func (m *Muse) Document() string {
 	return m.soul
 }

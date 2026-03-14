@@ -76,8 +76,8 @@ func TestRunDream_SuccessfulRun(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Processed 1 memories") {
 		t.Errorf("expected 'Processed 1 memories', got: %s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "Soul distilled") {
-		t.Errorf("expected 'Soul distilled', got: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "Muse distilled") {
+		t.Errorf("expected 'Muse distilled', got: %s", stdout.String())
 	}
 }
 
@@ -95,8 +95,8 @@ func TestRunDream_SuccessfulLearn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Soul distilled") {
-		t.Errorf("expected 'Soul distilled', got: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "Muse distilled") {
+		t.Errorf("expected 'Muse distilled', got: %s", stdout.String())
 	}
 }
 
@@ -104,7 +104,7 @@ func TestRunDream_SuccessfulLearn(t *testing.T) {
 type testStore struct {
 	sessions    []storage.SessionEntry
 	data        map[string]*memory.Session
-	soul        string
+	muse        string
 	reflections map[string]string
 }
 
@@ -148,11 +148,11 @@ func (s *testStore) PutSession(_ context.Context, session *memory.Session) (int,
 	})
 	return 0, nil
 }
-func (s *testStore) GetSoul(_ context.Context) (string, error) {
-	if s.soul == "" {
-		return "", &storage.NotFoundError{Key: "soul.md"}
+func (s *testStore) GetMuse(_ context.Context) (string, error) {
+	if s.muse == "" {
+		return "", &storage.NotFoundError{Key: "muse.md"}
 	}
-	return s.soul, nil
+	return s.muse, nil
 }
 func (s *testStore) ListReflections(_ context.Context) (map[string]time.Time, error) {
 	result := map[string]time.Time{}
@@ -178,15 +178,15 @@ func (s *testStore) DeletePrefix(_ context.Context, prefix string) error {
 	}
 	return nil
 }
-func (s *testStore) PutSoul(_ context.Context, _, content string) error {
-	s.soul = content
+func (s *testStore) PutMuse(_ context.Context, _, content string) error {
+	s.muse = content
 	return nil
 }
-func (s *testStore) ListSouls(_ context.Context) ([]string, error) {
+func (s *testStore) ListMuses(_ context.Context) ([]string, error) {
 	return nil, nil
 }
-func (s *testStore) GetSoulVersion(_ context.Context, _ string) (string, error) {
-	return "", &storage.NotFoundError{Key: "soul"}
+func (s *testStore) GetMuseVersion(_ context.Context, _ string) (string, error) {
+	return "", &storage.NotFoundError{Key: "muse"}
 }
 
 // failingStore implements storage.Store where all operations return an error.
@@ -201,7 +201,7 @@ func (s *failingStore) GetSession(_ context.Context, _, _ string) (*memory.Sessi
 func (s *failingStore) PutSession(_ context.Context, _ *memory.Session) (int, error) {
 	return 0, s.err
 }
-func (s *failingStore) GetSoul(_ context.Context) (string, error) { return "", s.err }
+func (s *failingStore) GetMuse(_ context.Context) (string, error) { return "", s.err }
 func (s *failingStore) ListReflections(_ context.Context) (map[string]time.Time, error) {
 	return nil, s.err
 }
@@ -210,11 +210,11 @@ func (s *failingStore) GetReflection(_ context.Context, _ string) (string, error
 }
 func (s *failingStore) PutReflection(_ context.Context, _, _ string) error { return s.err }
 func (s *failingStore) DeletePrefix(_ context.Context, _ string) error     { return s.err }
-func (s *failingStore) PutSoul(_ context.Context, _, _ string) error       { return s.err }
-func (s *failingStore) ListSouls(_ context.Context) ([]string, error) {
+func (s *failingStore) PutMuse(_ context.Context, _, _ string) error       { return s.err }
+func (s *failingStore) ListMuses(_ context.Context) ([]string, error) {
 	return nil, s.err
 }
-func (s *failingStore) GetSoulVersion(_ context.Context, _ string) (string, error) {
+func (s *failingStore) GetMuseVersion(_ context.Context, _ string) (string, error) {
 	return "", s.err
 }
 

@@ -17,7 +17,7 @@ import (
 type mockStore struct {
 	sessions    []storage.SessionEntry
 	data        map[string]*memory.Session
-	soul        string
+	muse        string
 	reflections map[string]string // memoryKey -> content
 	deleted     []string
 }
@@ -65,11 +65,11 @@ func (m *mockStore) PutSession(_ context.Context, session *memory.Session) (int,
 	return 0, nil
 }
 
-func (m *mockStore) GetSoul(_ context.Context) (string, error) {
-	if m.soul == "" {
-		return "", &storage.NotFoundError{Key: "soul.md"}
+func (m *mockStore) GetMuse(_ context.Context) (string, error) {
+	if m.muse == "" {
+		return "", &storage.NotFoundError{Key: "muse.md"}
 	}
-	return m.soul, nil
+	return m.muse, nil
 }
 
 func (m *mockStore) ListReflections(_ context.Context) (map[string]time.Time, error) {
@@ -101,17 +101,17 @@ func (m *mockStore) DeletePrefix(_ context.Context, prefix string) error {
 	return nil
 }
 
-func (m *mockStore) PutSoul(_ context.Context, _, content string) error {
-	m.soul = content
+func (m *mockStore) PutMuse(_ context.Context, _, content string) error {
+	m.muse = content
 	return nil
 }
 
-func (m *mockStore) ListSouls(_ context.Context) ([]string, error) {
+func (m *mockStore) ListMuses(_ context.Context) ([]string, error) {
 	return nil, nil
 }
 
-func (m *mockStore) GetSoulVersion(_ context.Context, _ string) (string, error) {
-	return "", &storage.NotFoundError{Key: "soul"}
+func (m *mockStore) GetMuseVersion(_ context.Context, _ string) (string, error) {
+	return "", &storage.NotFoundError{Key: "muse"}
 }
 
 // mockLLM implements dream.LLM with canned responses.
@@ -170,12 +170,12 @@ func TestDreamPipeline(t *testing.T) {
 		t.Errorf("Warnings = %v, want none", result.Warnings)
 	}
 
-	// Verify soul was written
-	if store.soul == "" {
-		t.Error("soul not written to store")
+	// Verify muse was written
+	if store.muse == "" {
+		t.Error("muse not written to store")
 	}
-	if !strings.Contains(store.soul, "kebab-case") {
-		t.Error("soul missing expected content")
+	if !strings.Contains(store.muse, "kebab-case") {
+		t.Error("muse missing expected content")
 	}
 
 	// Verify LLM was called: 2 sessions * 3 reflect steps (summarize + extract + refine) + 1 learn = 7 calls

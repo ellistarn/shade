@@ -110,36 +110,36 @@ func (l *LocalStore) GetSession(_ context.Context, src, sessionID string) (*memo
 	return &session, nil
 }
 
-// GetSoul returns the latest soul version by finding the most recent timestamp.
-func (l *LocalStore) GetSoul(_ context.Context) (string, error) {
-	timestamps, err := l.ListSouls(context.Background())
+// GetMuse returns the latest muse version by finding the most recent timestamp.
+func (l *LocalStore) GetMuse(_ context.Context) (string, error) {
+	timestamps, err := l.ListMuses(context.Background())
 	if err != nil {
 		return "", err
 	}
 	if len(timestamps) == 0 {
-		return "", &NotFoundError{Key: "souls/"}
+		return "", &NotFoundError{Key: "muses/"}
 	}
-	return l.GetSoulVersion(context.Background(), timestamps[len(timestamps)-1])
+	return l.GetMuseVersion(context.Background(), timestamps[len(timestamps)-1])
 }
 
-// PutSoul writes a soul version at the given timestamp.
-func (l *LocalStore) PutSoul(_ context.Context, timestamp, content string) error {
-	path := filepath.Join(l.root, "souls", timestamp, "soul.md")
+// PutMuse writes a muse version at the given timestamp.
+func (l *LocalStore) PutMuse(_ context.Context, timestamp, content string) error {
+	path := filepath.Join(l.root, "muses", timestamp, "muse.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
-// ListSouls returns timestamps of all soul versions, sorted ascending.
-func (l *LocalStore) ListSouls(_ context.Context) ([]string, error) {
-	soulsDir := filepath.Join(l.root, "souls")
-	entries, err := os.ReadDir(soulsDir)
+// ListMuses returns timestamps of all muse versions, sorted ascending.
+func (l *LocalStore) ListMuses(_ context.Context) ([]string, error) {
+	musesDir := filepath.Join(l.root, "muses")
+	entries, err := os.ReadDir(musesDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to list souls: %w", err)
+		return nil, fmt.Errorf("failed to list muses: %w", err)
 	}
 	var timestamps []string
 	for _, e := range entries {
@@ -151,15 +151,15 @@ func (l *LocalStore) ListSouls(_ context.Context) ([]string, error) {
 	return timestamps, nil
 }
 
-// GetSoulVersion reads a specific soul version.
-func (l *LocalStore) GetSoulVersion(_ context.Context, timestamp string) (string, error) {
-	path := filepath.Join(l.root, "souls", timestamp, "soul.md")
+// GetMuseVersion reads a specific muse version.
+func (l *LocalStore) GetMuseVersion(_ context.Context, timestamp string) (string, error) {
+	path := filepath.Join(l.root, "muses", timestamp, "muse.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", &NotFoundError{Key: soulVersionKey(timestamp)}
+			return "", &NotFoundError{Key: museVersionKey(timestamp)}
 		}
-		return "", fmt.Errorf("failed to read soul version %s: %w", timestamp, err)
+		return "", fmt.Errorf("failed to read muse version %s: %w", timestamp, err)
 	}
 	return string(data), nil
 }

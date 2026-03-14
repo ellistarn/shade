@@ -5,13 +5,13 @@ The muse is a faithful projection of its owner. Self-awareness is part of what i
 Some people operate with genuine intellectual honesty about their own limits. They say "I
 don't know" when they don't know. They name when they're confused. They hold some views with
 conviction and others tentatively, and they know which is which. This is a way of thinking —
-one of the most important things a soul can capture, because without it the muse renders
+one of the most important things a muse can capture, because without it the muse renders
 every opinion with equal authority.
 
 ## Why This Matters
 
 Judgment patterns say *what* the owner thinks. Self-awareness captures *how the owner holds
-what they think*. A soul that encodes "prefers X, believes Y, approaches Z this way" but
+what they think*. A muse that encodes "prefers X, believes Y, approaches Z this way" but
 doesn't encode the owner's varying confidence across those views produces a flat, uniformly
 confident muse. That's a fundamental distortion of someone who modulates between conviction
 and uncertainty.
@@ -44,7 +44,7 @@ they're pattern-matching versus understanding. These quieter signals matter just
 muse. The muse has no self to be aware of. "I know I tend to over-scope" is an owner trait.
 "The muse tends to hedge" is a different subject — don't introduce it.
 
-**Not all patterns are held equally.** The soul should reflect that some of the owner's views
+**Not all patterns are held equally.** The muse should reflect that some of the owner's views
 are strongly held and others are tentative. Flattening everything to the same confidence
 level is a distortion, not a simplification.
 

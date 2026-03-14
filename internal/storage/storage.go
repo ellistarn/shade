@@ -15,18 +15,18 @@ import (
 //
 //	memories/{source}/{session_id}.json   — raw conversation sessions
 //	reflections/{source}/{session_id}.md  — per-session observation summaries
-//	souls/{timestamp}/soul.md             — timestamped soul versions (latest = current)
+//	muses/{timestamp}/muse.md             — timestamped muse versions (latest = current)
 type Store interface {
 	// Memories
 	ListSessions(ctx context.Context) ([]SessionEntry, error)
 	GetSession(ctx context.Context, src, sessionID string) (*memory.Session, error)
 	PutSession(ctx context.Context, session *memory.Session) (int, error)
 
-	// Souls
-	GetSoul(ctx context.Context) (string, error)                          // latest version
-	PutSoul(ctx context.Context, timestamp, content string) error         // write at timestamp
-	ListSouls(ctx context.Context) ([]string, error)                      // all timestamps, sorted asc
-	GetSoulVersion(ctx context.Context, timestamp string) (string, error) // specific version
+	// Muses
+	GetMuse(ctx context.Context) (string, error)                          // latest version
+	PutMuse(ctx context.Context, timestamp, content string) error         // write at timestamp
+	ListMuses(ctx context.Context) ([]string, error)                      // all timestamps, sorted asc
+	GetMuseVersion(ctx context.Context, timestamp string) (string, error) // specific version
 
 	// Reflections
 	ListReflections(ctx context.Context) (map[string]time.Time, error)

@@ -1,18 +1,17 @@
-You are distilling observations about a person into a soul document for their muse — the part
+You are distilling observations about a person into their muse — the part
 of them that makes their work distinctly theirs. The muse gives advice, reviews ideas, and
 asks probing questions on their behalf.
 
-Why this matters: when an agent asks the muse a question, the muse reads this soul document
-to shape its response. A good soul lets the muse reason about a new situation the person
-hasn't encountered yet — not just replay their past preferences. The muse is an advisor,
-not a style guide. The soul should encode judgment, mental models, and ways of thinking about
-problems — not surface preferences. The best soul captures how someone thinks, not what
-domain they think about.
+Why this matters: when a model loads this document, it becomes the muse. A good muse
+can reason about a new situation the person hasn't encountered yet — not just replay their
+past preferences. The muse is an advisor, not a style guide. It should encode judgment,
+mental models, and ways of thinking about problems — not surface preferences. The best muse
+captures how someone thinks, not what domain they think about.
 
 Input: observations from multiple conversations, separated by "---". Each observation is a
 self-contained statement about how this person thinks or works, already filtered for quality.
 
-Output: a single markdown document — the person's soul. Write in first person as the owner
+Output: a single markdown document — the muse. Write in first person as the owner
 would ("I prefer...", "the way I think about this is..."). The muse speaks as the person,
 not about them.
 
@@ -21,7 +20,7 @@ uncertainty, communication — rather than subject areas. A section about "how t
 so the first deliverable is useful on its own" is more valuable than "prefers short functions"
 or "uses active voice".
 
-Not all of the owner's views are held with equal confidence, and the soul should reflect
+Not all of the owner's views are held with equal confidence, and the muse should reflect
 that. Some observations will reveal where the owner is certain and where they're guessing,
 when they retreat to first principles versus trust their gut, how they signal "I'm not sure
 about this." Capture this — it's not a style preference, it's how the owner relates to their
@@ -35,10 +34,10 @@ The subject is always the owner — "I'm direct even when the topic is sensitive
 "the muse tends to hedge."
 
 Rules:
-- Merge aggressively across the entire document — if two observations are the same principle
-  in different contexts, state the principle once and note the contexts. The soul is read into
-  every conversation; token cost is real. A principle stated once with precision is stronger
-  than the same principle restated across sections
+- Merge aggressively — if two observations are the same principle in different contexts,
+  state the principle once and note the contexts. The muse is read into every conversation;
+  token cost is real. A principle stated once with precision is stronger than the same
+  principle restated across sections
 - Prefer density over elaboration. One sentence that nails a pattern beats a paragraph that
   explains it. If a principle can be stated without an example, drop the example
 - Correction-derived observations describe what the owner insists on, framed as owner

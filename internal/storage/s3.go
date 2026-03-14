@@ -110,21 +110,21 @@ func (c *S3Store) GetSession(ctx context.Context, src, sessionID string) (*memor
 	return &session, nil
 }
 
-// GetSoul returns the latest soul version by finding the most recent timestamp.
-func (c *S3Store) GetSoul(ctx context.Context) (string, error) {
-	timestamps, err := c.ListSouls(ctx)
+// GetMuse returns the latest muse version by finding the most recent timestamp.
+func (c *S3Store) GetMuse(ctx context.Context) (string, error) {
+	timestamps, err := c.ListMuses(ctx)
 	if err != nil {
 		return "", err
 	}
 	if len(timestamps) == 0 {
-		return "", &NotFoundError{Key: "souls/"}
+		return "", &NotFoundError{Key: "muses/"}
 	}
-	return c.GetSoulVersion(ctx, timestamps[len(timestamps)-1])
+	return c.GetMuseVersion(ctx, timestamps[len(timestamps)-1])
 }
 
-// PutSoul writes a soul version at the given timestamp.
-func (c *S3Store) PutSoul(ctx context.Context, timestamp, content string) error {
-	key := soulVersionKey(timestamp)
+// PutMuse writes a muse version at the given timestamp.
+func (c *S3Store) PutMuse(ctx context.Context, timestamp, content string) error {
+	key := museVersionKey(timestamp)
 	contentType := "text/markdown"
 	_, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      &c.bucket,
@@ -133,21 +133,21 @@ func (c *S3Store) PutSoul(ctx context.Context, timestamp, content string) error 
 		ContentType: &contentType,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to put soul: %w", err)
+		return fmt.Errorf("failed to put muse: %w", err)
 	}
 	return nil
 }
 
-// ListSouls returns timestamps of all soul versions, sorted ascending.
-func (c *S3Store) ListSouls(ctx context.Context) ([]string, error) {
-	prefix := "souls/"
+// ListMuses returns timestamps of all muse versions, sorted ascending.
+func (c *S3Store) ListMuses(ctx context.Context) ([]string, error) {
+	prefix := "muses/"
 	out, err := c.s3.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 		Bucket:    &c.bucket,
 		Prefix:    aws.String(prefix),
 		Delimiter: aws.String("/"),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list souls: %w", err)
+		return nil, fmt.Errorf("failed to list muses: %w", err)
 	}
 	var timestamps []string
 	for _, cp := range out.CommonPrefixes {
@@ -162,9 +162,9 @@ func (c *S3Store) ListSouls(ctx context.Context) ([]string, error) {
 	return timestamps, nil
 }
 
-// GetSoulVersion downloads a specific soul version from S3.
-func (c *S3Store) GetSoulVersion(ctx context.Context, timestamp string) (string, error) {
-	key := soulVersionKey(timestamp)
+// GetMuseVersion downloads a specific muse version from S3.
+func (c *S3Store) GetMuseVersion(ctx context.Context, timestamp string) (string, error) {
+	key := museVersionKey(timestamp)
 	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &c.bucket,
 		Key:    &key,
@@ -175,7 +175,7 @@ func (c *S3Store) GetSoulVersion(ctx context.Context, timestamp string) (string,
 	defer out.Body.Close()
 	data, err := io.ReadAll(out.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read soul version %s: %w", timestamp, err)
+		return "", fmt.Errorf("failed to read muse version %s: %w", timestamp, err)
 	}
 	return string(data), nil
 }
@@ -287,8 +287,8 @@ func parseSessionKey(key string) (src, sessionID string) {
 	return src, sessionID
 }
 
-func soulVersionKey(timestamp string) string {
-	return fmt.Sprintf("souls/%s/soul.md", timestamp)
+func museVersionKey(timestamp string) string {
+	return fmt.Sprintf("muses/%s/muse.md", timestamp)
 }
 
 // reflectionKey converts a memory key to its reflection storage key.

@@ -8,7 +8,7 @@ import (
 
 // Sync copies data from src to dst. It is additive — items in dst that don't
 // exist in src are left alone. If categories is empty, all categories are synced.
-// Valid categories: "memories", "reflections", "souls".
+// Valid categories: "memories", "reflections", "muses".
 func Sync(ctx context.Context, src, dst Store, categories []string, w io.Writer) error {
 	all := len(categories) == 0
 	cats := map[string]bool{}
@@ -32,12 +32,12 @@ func Sync(ctx context.Context, src, dst Store, categories []string, w io.Writer)
 		fmt.Fprintf(w, "Synced %d reflections\n", n)
 	}
 
-	if all || cats["souls"] {
-		n, err := syncSouls(ctx, src, dst)
+	if all || cats["muses"] {
+		n, err := syncMuses(ctx, src, dst)
 		if err != nil {
-			return fmt.Errorf("sync souls: %w", err)
+			return fmt.Errorf("sync muses: %w", err)
 		}
-		fmt.Fprintf(w, "Synced %d souls\n", n)
+		fmt.Fprintf(w, "Synced %d muses\n", n)
 	}
 
 	return nil
@@ -81,19 +81,19 @@ func syncReflections(ctx context.Context, src, dst Store) (int, error) {
 	return count, nil
 }
 
-func syncSouls(ctx context.Context, src, dst Store) (int, error) {
-	timestamps, err := src.ListSouls(ctx)
+func syncMuses(ctx context.Context, src, dst Store) (int, error) {
+	timestamps, err := src.ListMuses(ctx)
 	if err != nil {
 		return 0, err
 	}
 	var count int
 	for _, ts := range timestamps {
-		content, err := src.GetSoulVersion(ctx, ts)
+		content, err := src.GetMuseVersion(ctx, ts)
 		if err != nil {
-			return count, fmt.Errorf("get soul %s: %w", ts, err)
+			return count, fmt.Errorf("get muse %s: %w", ts, err)
 		}
-		if err := dst.PutSoul(ctx, ts, content); err != nil {
-			return count, fmt.Errorf("put soul %s: %w", ts, err)
+		if err := dst.PutMuse(ctx, ts, content); err != nil {
+			return count, fmt.Errorf("put muse %s: %w", ts, err)
 		}
 		count++
 	}

@@ -27,7 +27,7 @@ type Result struct {
 	Pruned    int
 	Remaining int // memories still pending reflection
 	Usage     inference.Usage
-	Soul      string // the distilled soul document
+	Muse      string // the distilled muse document
 	Warnings  []string
 }
 
@@ -42,7 +42,7 @@ type Options struct {
 // estimateTokens is a convenience alias for inference.EstimateTokens.
 var estimateTokens = inference.EstimateTokens
 
-// Run executes the dream pipeline: reflect on new memories, then learn a soul
+// Run executes the dream pipeline: reflect on new memories, then learn a muse
 // from all reflections. Reflections are the source of truth for what has been
 // processed; there is no separate state file.
 func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opts Options) (*Result, error) {
@@ -177,12 +177,12 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 		return &Result{Pruned: pruned, Remaining: remaining, Warnings: warnings}, nil
 	}
 
-	log.Printf("Distilling soul from %d reflections...\n", len(allReflections))
-	soul, learnUsage, err := learn(ctx, learnLLM, store, allReflections)
+	log.Printf("Distilling muse from %d reflections...\n", len(allReflections))
+	muse, learnUsage, err := learn(ctx, learnLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
-	log.Printf("Soul distilled ($%.4f)\n", learnUsage.Cost())
+	log.Printf("Muse distilled ($%.4f)\n", learnUsage.Cost())
 
 	processed := len(pending) - len(warnings)
 	if processed < 0 {
@@ -193,13 +193,13 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 		Pruned:    pruned,
 		Remaining: remaining,
 		Usage:     reflectUsage.Add(learnUsage),
-		Soul:      soul,
+		Muse:      muse,
 		Warnings:  warnings,
 	}, nil
 }
 
 // LearnOnly re-runs only the learn phase using persisted reflections.
-// Use this to re-synthesize the soul with improved techniques without re-reflecting.
+// Use this to re-synthesize the muse with improved techniques without re-reflecting.
 func LearnOnly(ctx context.Context, store storage.Store, learnLLM LLM) (*Result, error) {
 	allReflections, err := loadAllReflections(ctx, store)
 	if err != nil {
@@ -209,25 +209,25 @@ func LearnOnly(ctx context.Context, store storage.Store, learnLLM LLM) (*Result,
 		return &Result{}, nil
 	}
 
-	log.Printf("Re-distilling soul from %d reflections...\n", len(allReflections))
-	soul, usage, err := learn(ctx, learnLLM, store, allReflections)
+	log.Printf("Re-distilling muse from %d reflections...\n", len(allReflections))
+	muse, usage, err := learn(ctx, learnLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
-	log.Printf("Soul distilled ($%.4f)\n", usage.Cost())
+	log.Printf("Muse distilled ($%.4f)\n", usage.Cost())
 
 	return &Result{
 		Usage:    usage,
-		Soul:     soul,
+		Muse:     muse,
 		Warnings: nil,
 	}, nil
 }
 
-// writeSoul writes a new timestamped soul version.
-func writeSoul(ctx context.Context, store storage.Store, soul string) error {
+// writeMuse writes a new timestamped muse version.
+func writeMuse(ctx context.Context, store storage.Store, muse string) error {
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	log.Printf("Writing soul to souls/%s/...\n", timestamp)
-	return store.PutSoul(ctx, timestamp, soul)
+	log.Printf("Writing muse to muses/%s/...\n", timestamp)
+	return store.PutMuse(ctx, timestamp, muse)
 }
 
 // loadAllReflections fetches every persisted reflection from storage.
@@ -348,16 +348,16 @@ func learn(ctx context.Context, client LLM, store storage.Store, observations []
 		return "", inference.Usage{}, nil
 	}
 	input := strings.Join(observations, "\n\n---\n\n")
-	soul, usage, err := client.Converse(ctx, prompts.Learn, input, inference.WithThinking(16000))
+	muse, usage, err := client.Converse(ctx, prompts.Learn, input, inference.WithThinking(16000))
 	if err != nil {
 		return "", usage, err
 	}
 	// Strip markdown code fences the LLM sometimes wraps output in
-	soul = stripCodeFences(soul)
-	if err := writeSoul(ctx, store, soul); err != nil {
-		return "", usage, fmt.Errorf("failed to write soul: %w", err)
+	muse = stripCodeFences(muse)
+	if err := writeMuse(ctx, store, muse); err != nil {
+		return "", usage, fmt.Errorf("failed to write muse: %w", err)
 	}
-	return soul, usage, nil
+	return muse, usage, nil
 }
 
 // stripCodeFences removes wrapping ```markdown ... ``` from LLM output.

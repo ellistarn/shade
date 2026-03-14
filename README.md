@@ -1,8 +1,7 @@
 # Muse
 
-A muse absorbs memories from your conversations, distills them into a soul
-document (soul.md), and embodies your unique thought processes when asked
-questions.
+A muse absorbs memories from your conversations, distills them into a document
+(muse.md), and embodies your unique thought processes when asked questions.
 
 ## Install
 
@@ -13,8 +12,8 @@ go install github.com/ellistarn/muse/cmd/muse@latest
 ## Getting Started
 
 ```bash
-muse dream                # discover memories and distill soul.md
-muse soul                 # print soul.md
+muse dream                # discover memories and distill muse.md
+muse show                 # print muse.md
 muse ask "your question"  # ask your muse directly
 muse listen               # start MCP server
 ```

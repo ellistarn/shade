@@ -21,19 +21,19 @@ func newDreamCmd() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "dream",
-		Short: "Distill a soul from memories",
-		Long: `Discovers new memories, reflects on them, and distills a soul document
-(soul.md) that captures how you think. Safe to run repeatedly — only new
+		Short: "Distill a muse from memories",
+		Long: `Discovers new memories, reflects on them, and distills a muse document
+(muse.md) that captures how you think. Safe to run repeatedly — only new
 memories are discovered and only unreflected memories are processed. The
-soul is always re-distilled.
+muse is always re-distilled.
 
 The pipeline is a map-reduce: reflect maps each memory into observations,
-then learn reduces all observations into a single soul document.
+then learn reduces all observations into a single muse document.
 
-Use --learn to re-distill the soul from existing reflections without
+Use --learn to re-distill the muse from existing reflections without
 reprocessing memories. Use --reflect to reprocess all memories from scratch.`,
-		Example: `  muse dream              # discover memories, reflect, and distill soul
-  muse dream --learn      # re-distill soul from existing reflections
+		Example: `  muse dream              # discover memories, reflect, and distill muse
+  muse dream --learn      # re-distill muse from existing reflections
   muse dream --reflect    # re-reflect on all memories from scratch
   muse dream --limit 50   # process at most 50 memories`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -85,7 +85,7 @@ reprocessing memories. Use --reflect to reprocess all memories from scratch.`,
 		},
 	}
 	cmd.Flags().BoolVar(&reflect, "reflect", false, "re-reflect on all memories from scratch")
-	cmd.Flags().BoolVar(&learn, "learn", false, "skip reflect, re-distill soul from existing reflections")
+	cmd.Flags().BoolVar(&learn, "learn", false, "skip reflect, re-distill muse from existing reflections")
 	cmd.Flags().IntVar(&limit, "limit", 100, "max memories to process (0 = no limit)")
 	return cmd
 }
@@ -114,10 +114,10 @@ func runDream(ctx context.Context, stdout, stderr io.Writer, store storage.Store
 			fmt.Fprintf(stdout, "%d memories still pending reflection (run dream again)\n", result.Remaining)
 		}
 	}
-	fmt.Fprintf(stdout, "Soul distilled (%dk input, %dk output tokens, $%.2f)\n",
+	fmt.Fprintf(stdout, "Muse distilled (%dk input, %dk output tokens, $%.2f)\n",
 		result.Usage.InputTokens/1000, result.Usage.OutputTokens/1000, result.Usage.Cost())
-	if result.Soul != "" {
-		fmt.Fprintf(stdout, "soul.md: ~%d tokens\n", inference.EstimateTokens(result.Soul))
+	if result.Muse != "" {
+		fmt.Fprintf(stdout, "muse.md: ~%d tokens\n", inference.EstimateTokens(result.Muse))
 	}
 	return nil
 }

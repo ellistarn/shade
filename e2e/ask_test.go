@@ -85,10 +85,10 @@ func TestAskWithSoul(t *testing.T) {
 	}
 	// Soul content should be in system prompt
 	if !strings.Contains(runtime.calls[0].system, "kebab-case") {
-		t.Error("system prompt missing soul content")
+		t.Error("system prompt missing muse content")
 	}
 	if !strings.Contains(runtime.calls[0].system, "wrap errors") {
-		t.Error("system prompt missing soul content about error handling")
+		t.Error("system prompt missing muse content about error handling")
 	}
 	// Single user message
 	if runtime.calls[0].messages != 1 {
@@ -96,7 +96,7 @@ func TestAskWithSoul(t *testing.T) {
 	}
 }
 
-func TestAskEmptySoul(t *testing.T) {
+func TestAskEmptyMuse(t *testing.T) {
 	runtime := &mockRuntime{responses: []bedrockruntime.ConverseOutput{
 		textResponse("I don't have any knowledge to draw on for that."),
 	}}
@@ -116,8 +116,8 @@ func TestAskEmptySoul(t *testing.T) {
 	if len(runtime.calls) != 1 {
 		t.Fatalf("Bedrock calls = %d, want 1", len(runtime.calls))
 	}
-	if !strings.Contains(runtime.calls[0].system, "No soul document available") {
-		t.Error("system prompt should indicate no soul available")
+	if !strings.Contains(runtime.calls[0].system, "No muse document available") {
+		t.Error("system prompt should indicate no muse available")
 	}
 }
 
