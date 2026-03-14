@@ -3,7 +3,6 @@ package dream
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -47,7 +46,6 @@ var estimateTokens = inference.EstimateTokens
 // processed; there is no separate state file.
 func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opts Options) (*Result, error) {
 	// List all memories and existing reflections
-	slog.Debug("listing memories")
 	entries, err := store.ListSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list memories: %w", err)
@@ -60,7 +58,6 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 
 	// If reprocessing, clear all existing reflections
 	if opts.Reflect {
-		slog.Debug("re-reflecting all memories")
 		if err := store.DeletePrefix(ctx, "reflections/"); err != nil {
 			return nil, fmt.Errorf("failed to clear reflections: %w", err)
 		}
@@ -83,34 +80,14 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 	})
 	totalPending := len(pending)
 	if opts.Limit > 0 && len(pending) > opts.Limit {
-		slog.Debug("limiting memories", "total", len(pending), "limit", opts.Limit)
 		pending = pending[:opts.Limit]
 	}
-	slog.Debug("found memories", "total", len(entries), "new", totalPending, "reflected", pruned)
 
 	var warnings []string
 	var reflectUsage inference.Usage
 
 	// Reflect on pending memories in parallel
 	if len(pending) > 0 {
-		slog.Debug("estimating tokens")
-		var totalEstimate int
-		for _, entry := range pending {
-			session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
-			if err != nil {
-				continue
-			}
-			turns := extractTurns(session)
-			for _, t := range turns {
-				totalEstimate += estimateTokens(prompts.ReflectSummarize) + estimateTokens(t.assistantContent)
-				totalEstimate += estimateTokens(t.humanContent)
-			}
-			// Add estimate for extract + refine passes
-			totalEstimate += estimateTokens(prompts.ReflectExtract) + estimateTokens(prompts.ReflectRefine)
-		}
-		slog.Debug("estimated reflect tokens", "tokens_k", totalEstimate/1000)
-
-		slog.Debug("reflecting", "memories", len(pending))
 		type mapResult struct {
 			key          string
 			observations string
@@ -131,21 +108,12 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 				session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
 				if err != nil {
 					results[i] = mapResult{key: entry.Key, err: err}
-					n := completed.Add(1)
-					slog.Debug("reflect error", "n", n, "total", len(pending), "key", entry.Key, "err", err)
+					completed.Add(1)
 					return
 				}
-				msgs := len(session.Messages)
 				obs, usage, err := reflectOnSession(ctx, reflectLLM, session)
 				results[i] = mapResult{key: entry.Key, observations: obs, usage: usage, err: err}
-				n := completed.Add(1)
-				if err != nil {
-					slog.Debug("reflect failed", "n", n, "total", len(pending), "msgs", msgs, "err", err, "key", entry.Key)
-				} else {
-					slog.Debug("reflect done", "n", n, "total", len(pending), "msgs", msgs,
-						"input_tokens", usage.InputTokens, "output_tokens", usage.OutputTokens,
-						"cost", fmt.Sprintf("$%.4f", usage.Cost()), "key", entry.Key)
-				}
+				completed.Add(1)
 			}(i, entry)
 		}
 		wg.Wait()
@@ -161,13 +129,9 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 				warnings = append(warnings, fmt.Sprintf("failed to save reflection for %s: %v", r.key, err))
 			}
 		}
-		slog.Debug("reflect complete", "memories", len(pending)-len(warnings), "cost", fmt.Sprintf("$%.4f", reflectUsage.Cost()))
 	}
 
 	remaining := totalPending - len(pending)
-	if remaining > 0 {
-		slog.Debug("memories still pending", "remaining", remaining)
-	}
 
 	// Learn from ALL reflections (not just new ones)
 	allReflections, err := loadAllReflections(ctx, store)
@@ -178,12 +142,10 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 		return &Result{Pruned: pruned, Remaining: remaining, Warnings: warnings}, nil
 	}
 
-	slog.Debug("distilling soul", "reflections", len(allReflections))
 	soul, learnUsage, err := learn(ctx, learnLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
-	slog.Debug("soul distilled", "cost", fmt.Sprintf("$%.4f", learnUsage.Cost()))
 
 	processed := len(pending) - len(warnings)
 	if processed < 0 {
@@ -210,12 +172,10 @@ func LearnOnly(ctx context.Context, store storage.Store, learnLLM LLM) (*Result,
 		return &Result{}, nil
 	}
 
-	slog.Debug("re-distilling soul", "reflections", len(allReflections))
 	soul, usage, err := learn(ctx, learnLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
-	slog.Debug("soul distilled", "cost", fmt.Sprintf("$%.4f", usage.Cost()))
 
 	return &Result{
 		Usage:    usage,
@@ -227,7 +187,6 @@ func LearnOnly(ctx context.Context, store storage.Store, learnLLM LLM) (*Result,
 // writeSoul writes a new timestamped soul version.
 func writeSoul(ctx context.Context, store storage.Store, soul string) error {
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	slog.Debug("writing soul", "timestamp", timestamp)
 	return store.PutSoul(ctx, timestamp, soul)
 }
 

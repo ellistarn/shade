@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -34,7 +33,6 @@ Use --diff to summarize what changed since the last dream.`,
 				return runDiff(cmd, store)
 			}
 
-			slog.Debug("loading soul")
 			soul, err := store.GetSoul(ctx)
 			if err != nil {
 				if !storage.IsNotFound(err) {
@@ -55,7 +53,6 @@ Use --diff to summarize what changed since the last dream.`,
 func runDiff(cmd *cobra.Command, store storage.Store) error {
 	ctx := cmd.Context()
 
-	slog.Debug("loading soul history")
 	souls, err := store.ListSouls(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list soul history: %w", err)
@@ -63,9 +60,7 @@ func runDiff(cmd *cobra.Command, store storage.Store) error {
 	if len(souls) < 2 {
 		return fmt.Errorf("need at least 2 soul versions to diff; only found %d", len(souls))
 	}
-	// Compare the second-to-last with the latest
 	prevTimestamp := souls[len(souls)-2]
-	slog.Debug("comparing snapshots", "prev", prevTimestamp)
 
 	prev, err := store.GetSoulVersion(ctx, prevTimestamp)
 	if err != nil {
@@ -78,14 +73,12 @@ func runDiff(cmd *cobra.Command, store storage.Store) error {
 		}
 		current = ""
 	}
-	slog.Debug("diff sizes", "prev_bytes", len(prev), "current_bytes", len(current))
 
 	if prev == "" && current == "" {
 		fmt.Fprintln(cmd.OutOrStdout(), "No soul in either snapshot.")
 		return nil
 	}
 
-	slog.Debug("generating diff summary")
 	llm, err := bedrock.NewClient(ctx, bedrock.ModelSonnet)
 	if err != nil {
 		return err
@@ -97,7 +90,6 @@ func runDiff(cmd *cobra.Command, store storage.Store) error {
 	if err != nil {
 		return fmt.Errorf("failed to generate diff summary: %w", err)
 	}
-	slog.Debug("diff complete", "cost", fmt.Sprintf("$%.4f", usage.Cost()))
 	fmt.Fprintf(cmd.OutOrStdout(), "Changes since %s:\n\n%s\n", prevTimestamp, strings.TrimSpace(summary))
 	fmt.Fprintf(cmd.ErrOrStderr(), "tokens: %d in / %d out · $%.4f\n",
 		usage.InputTokens, usage.OutputTokens, usage.Cost())

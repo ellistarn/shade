@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 
 	"github.com/spf13/cobra"
 
@@ -69,7 +68,6 @@ reprocessing memories. Use --reflect to reprocess all memories from scratch.`,
 				if cerr != nil {
 					return cerr
 				}
-				slog.Debug("learning", "model", client.Model())
 				return runDream(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, nil, client, true, false, 0)
 			}
 			reflectClient, err := bedrock.NewClient(ctx, bedrock.ModelSonnet)
@@ -80,7 +78,6 @@ reprocessing memories. Use --reflect to reprocess all memories from scratch.`,
 			if err != nil {
 				return err
 			}
-			slog.Debug("starting dream", "reflect_model", reflectClient.Model(), "learn_model", learnClient.Model())
 			return runDream(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, reflectClient, learnClient, false, reflect, limit)
 		},
 	}

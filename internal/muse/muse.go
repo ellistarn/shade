@@ -3,7 +3,6 @@ package muse
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
@@ -57,11 +56,6 @@ func New(ctx context.Context, store storage.Store) (*Muse, error) {
 			return nil, fmt.Errorf("failed to load soul: %w", err)
 		}
 		soul = "" // no soul yet — first run before any dreams
-	}
-	if soul != "" {
-		slog.Debug("loaded soul", "bytes", len(soul))
-	} else {
-		slog.Debug("no soul found")
 	}
 	return &Muse{
 		storage:  store,
@@ -142,18 +136,15 @@ func (m *Muse) Ask(ctx context.Context, input AskInput) (*AskResult, error) {
 
 // Upload scans local sources, diffs against storage, and uploads changed sessions.
 func (m *Muse) Upload(ctx context.Context) (*UploadResult, error) {
-	slog.Debug("listing remote sessions")
 	existing, err := m.storage.ListSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote sessions: %w", err)
 	}
-	slog.Debug("found remote sessions", "count", len(existing))
 	remote := map[string]storage.SessionEntry{}
 	for _, e := range existing {
 		remote[e.Key] = e
 	}
 
-	slog.Debug("scanning local sessions")
 	type result struct {
 		name     string
 		sessions []memory.Session
@@ -179,11 +170,9 @@ func (m *Muse) Upload(ctx context.Context) (*UploadResult, error) {
 			warnings = append(warnings, fmt.Sprintf("failed to read %s sessions: %v", r.name, r.err))
 			continue
 		}
-		slog.Debug("found local sessions", "count", len(r.sessions), "source", r.name)
 		local = append(local, r.sessions...)
 	}
 
-	slog.Debug("diffing sessions", "local", len(local))
 	var uploaded, skipped int
 	var totalBytes int
 	for i := range local {
@@ -191,7 +180,6 @@ func (m *Muse) Upload(ctx context.Context) (*UploadResult, error) {
 		key := fmt.Sprintf("memories/%s/%s.json", sess.Source, sess.SessionID)
 		if entry, exists := remote[key]; exists {
 			if !sess.UpdatedAt.After(entry.LastModified) {
-				slog.Debug("skip unchanged", "key", key)
 				skipped++
 				continue
 			}
@@ -201,7 +189,6 @@ func (m *Muse) Upload(ctx context.Context) (*UploadResult, error) {
 			warnings = append(warnings, fmt.Sprintf("failed to upload %s: %v", sess.SessionID, err))
 			continue
 		}
-		slog.Debug("upload", "size", FormatBytes(n), "key", key)
 		uploaded++
 		totalBytes += n
 	}

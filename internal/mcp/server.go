@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -35,10 +34,6 @@ func NewServer(m *muse.Muse) *server.MCPServer {
 				return mcp.NewToolResultError(fmt.Sprintf("failed to ask: %v", err)), nil
 			}
 			sessionID = result.SessionID
-			slog.Debug("mcp ask complete",
-				"input_tokens", result.Usage.InputTokens,
-				"output_tokens", result.Usage.OutputTokens,
-				"cost", fmt.Sprintf("$%.4f", result.Usage.Cost()))
 			return mcp.NewToolResultText(result.Response), nil
 		},
 	)
