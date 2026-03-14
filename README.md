@@ -49,7 +49,11 @@ environment variable:
 export MUSE_BUCKET=$USER-muse
 ```
 
-Use `muse sync <local|s3> <local|s3> [memories|reflections|souls]` to copy data
-between backends.
+To copy data between local and S3:
+
+```bash
+muse sync local s3              # push everything to S3
+muse sync s3 local memories     # pull only memories
+```
 
 Run `muse --help` for detailed usage.
