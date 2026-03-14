@@ -25,7 +25,7 @@ that don't exist in the source are left alone.
 
 Endpoints:
   local   Local filesystem (~/.muse/)
-  s3      S3 bucket (requires MUSE_BUCKET)
+  s3      S3 bucket (export MUSE_BUCKET=...)
 
 By default all data is synced. You can limit to a category (memories,
 reflections, souls) but you rarely need to.`,
