@@ -10,25 +10,28 @@ import (
 
 // Store is the interface for all storage operations. Implementations include
 // S3 (for hosted/remote mode) and local filesystem (for zero-config local use).
+//
+// Storage layout:
+//
+//	memories/{source}/{session_id}.json   — raw conversation sessions
+//	reflections/{source}/{session_id}.md  — per-session observation summaries
+//	souls/{timestamp}/soul.md             — timestamped soul versions (latest = current)
 type Store interface {
-	// Sessions
+	// Memories
 	ListSessions(ctx context.Context) ([]SessionEntry, error)
 	GetSession(ctx context.Context, src, sessionID string) (*memory.Session, error)
 	PutSession(ctx context.Context, session *memory.Session) (int, error)
 
-	// Soul
-	GetSoul(ctx context.Context) (string, error)
-	PutSoul(ctx context.Context, content string) error
-	SnapshotSoul(ctx context.Context, timestamp string) error
+	// Souls
+	GetSoul(ctx context.Context) (string, error)                          // latest version
+	PutSoul(ctx context.Context, timestamp, content string) error         // write at timestamp
+	ListSouls(ctx context.Context) ([]string, error)                      // all timestamps, sorted asc
+	GetSoulVersion(ctx context.Context, timestamp string) (string, error) // specific version
 
 	// Reflections
 	ListReflections(ctx context.Context) (map[string]time.Time, error)
 	GetReflection(ctx context.Context, memoryKey string) (string, error)
 	PutReflection(ctx context.Context, key, content string) error
-
-	// Dream history
-	ListDreams(ctx context.Context) ([]string, error)
-	GetDreamSoul(ctx context.Context, timestamp string) (string, error)
 
 	// Maintenance
 	DeletePrefix(ctx context.Context, prefix string) error

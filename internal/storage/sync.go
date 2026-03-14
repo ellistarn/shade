@@ -1,0 +1,101 @@
+package storage
+
+import (
+	"context"
+	"fmt"
+	"io"
+)
+
+// Sync copies data from src to dst. It is additive — items in dst that don't
+// exist in src are left alone. If categories is empty, all categories are synced.
+// Valid categories: "memories", "reflections", "souls".
+func Sync(ctx context.Context, src, dst Store, categories []string, w io.Writer) error {
+	all := len(categories) == 0
+	cats := map[string]bool{}
+	for _, c := range categories {
+		cats[c] = true
+	}
+
+	if all || cats["memories"] {
+		n, err := syncMemories(ctx, src, dst)
+		if err != nil {
+			return fmt.Errorf("sync memories: %w", err)
+		}
+		fmt.Fprintf(w, "Synced %d memories\n", n)
+	}
+
+	if all || cats["reflections"] {
+		n, err := syncReflections(ctx, src, dst)
+		if err != nil {
+			return fmt.Errorf("sync reflections: %w", err)
+		}
+		fmt.Fprintf(w, "Synced %d reflections\n", n)
+	}
+
+	if all || cats["souls"] {
+		n, err := syncSouls(ctx, src, dst)
+		if err != nil {
+			return fmt.Errorf("sync souls: %w", err)
+		}
+		fmt.Fprintf(w, "Synced %d souls\n", n)
+	}
+
+	return nil
+}
+
+func syncMemories(ctx context.Context, src, dst Store) (int, error) {
+	entries, err := src.ListSessions(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var count int
+	for _, e := range entries {
+		session, err := src.GetSession(ctx, e.Source, e.SessionID)
+		if err != nil {
+			return count, fmt.Errorf("get session %s: %w", e.Key, err)
+		}
+		if _, err := dst.PutSession(ctx, session); err != nil {
+			return count, fmt.Errorf("put session %s: %w", e.Key, err)
+		}
+		count++
+	}
+	return count, nil
+}
+
+func syncReflections(ctx context.Context, src, dst Store) (int, error) {
+	index, err := src.ListReflections(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var count int
+	for memoryKey := range index {
+		content, err := src.GetReflection(ctx, memoryKey)
+		if err != nil {
+			return count, fmt.Errorf("get reflection %s: %w", memoryKey, err)
+		}
+		if err := dst.PutReflection(ctx, memoryKey, content); err != nil {
+			return count, fmt.Errorf("put reflection %s: %w", memoryKey, err)
+		}
+		count++
+	}
+	return count, nil
+}
+
+func syncSouls(ctx context.Context, src, dst Store) (int, error) {
+	timestamps, err := src.ListSouls(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var count int
+	for _, ts := range timestamps {
+		content, err := src.GetSoulVersion(ctx, ts)
+		if err != nil {
+			return count, fmt.Errorf("get soul %s: %w", ts, err)
+		}
+		if err := dst.PutSoul(ctx, ts, content); err != nil {
+			return count, fmt.Errorf("put soul %s: %w", ts, err)
+		}
+		count++
+	}
+	return count, nil
+}

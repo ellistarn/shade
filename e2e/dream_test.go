@@ -95,27 +95,23 @@ func (m *mockStore) PutReflection(_ context.Context, key, content string) error 
 
 func (m *mockStore) DeletePrefix(_ context.Context, prefix string) error {
 	m.deleted = append(m.deleted, prefix)
-	if prefix == "dreams/reflections/" {
+	if prefix == "reflections/" {
 		m.reflections = map[string]string{}
 	}
 	return nil
 }
 
-func (m *mockStore) PutSoul(_ context.Context, content string) error {
+func (m *mockStore) PutSoul(_ context.Context, _, content string) error {
 	m.soul = content
 	return nil
 }
 
-func (m *mockStore) SnapshotSoul(_ context.Context, _ string) error {
-	return nil
-}
-
-func (m *mockStore) ListDreams(_ context.Context) ([]string, error) {
+func (m *mockStore) ListSouls(_ context.Context) ([]string, error) {
 	return nil, nil
 }
 
-func (m *mockStore) GetDreamSoul(_ context.Context, _ string) (string, error) {
-	return "", &storage.NotFoundError{Key: "dream"}
+func (m *mockStore) GetSoulVersion(_ context.Context, _ string) (string, error) {
+	return "", &storage.NotFoundError{Key: "soul"}
 }
 
 // mockLLM implements dream.LLM with canned responses.

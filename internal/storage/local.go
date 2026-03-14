@@ -53,7 +53,6 @@ func (l *LocalStore) ListSessions(_ context.Context) ([]SessionEntry, error) {
 		if err != nil {
 			return nil
 		}
-		// rel = "source/session_id.json"
 		parts := strings.SplitN(filepath.ToSlash(rel), "/", 2)
 		if len(parts) != 2 {
 			return nil
@@ -111,45 +110,63 @@ func (l *LocalStore) GetSession(_ context.Context, src, sessionID string) (*memo
 	return &session, nil
 }
 
-// GetSoul reads the soul document from the filesystem.
+// GetSoul returns the latest soul version by finding the most recent timestamp.
 func (l *LocalStore) GetSoul(_ context.Context) (string, error) {
-	path := filepath.Join(l.root, soulKey)
-	data, err := os.ReadFile(path)
+	timestamps, err := l.ListSouls(context.Background())
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", &NotFoundError{Key: soulKey}
-		}
-		return "", fmt.Errorf("failed to read soul: %w", err)
+		return "", err
 	}
-	return string(data), nil
+	if len(timestamps) == 0 {
+		return "", &NotFoundError{Key: "souls/"}
+	}
+	return l.GetSoulVersion(context.Background(), timestamps[len(timestamps)-1])
 }
 
-// PutSoul writes the soul document.
-func (l *LocalStore) PutSoul(_ context.Context, content string) error {
-	path := filepath.Join(l.root, soulKey)
+// PutSoul writes a soul version at the given timestamp.
+func (l *LocalStore) PutSoul(_ context.Context, timestamp, content string) error {
+	path := filepath.Join(l.root, "souls", timestamp, "soul.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
-// SnapshotSoul copies the current soul to dreams/history/{timestamp}/soul.md.
-func (l *LocalStore) SnapshotSoul(_ context.Context, timestamp string) error {
-	srcPath := filepath.Join(l.root, soulKey)
-	data, err := os.ReadFile(srcPath)
+// ListSouls returns timestamps of all soul versions, sorted ascending.
+func (l *LocalStore) ListSouls(_ context.Context) ([]string, error) {
+	soulsDir := filepath.Join(l.root, "souls")
+	entries, err := os.ReadDir(soulsDir)
 	if err != nil {
-		return fmt.Errorf("failed to read soul for snapshot: %w", err)
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to list souls: %w", err)
 	}
-	dstPath := filepath.Join(l.root, "dreams", "history", timestamp, "soul.md")
-	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+	var timestamps []string
+	for _, e := range entries {
+		if e.IsDir() {
+			timestamps = append(timestamps, e.Name())
+		}
 	}
-	return os.WriteFile(dstPath, data, 0o644)
+	sort.Strings(timestamps)
+	return timestamps, nil
 }
 
-// PutReflection writes a reflection under dreams/reflections/.
+// GetSoulVersion reads a specific soul version.
+func (l *LocalStore) GetSoulVersion(_ context.Context, timestamp string) (string, error) {
+	path := filepath.Join(l.root, "souls", timestamp, "soul.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", &NotFoundError{Key: soulVersionKey(timestamp)}
+		}
+		return "", fmt.Errorf("failed to read soul version %s: %w", timestamp, err)
+	}
+	return string(data), nil
+}
+
+// PutReflection writes a reflection under reflections/.
 func (l *LocalStore) PutReflection(_ context.Context, key, content string) error {
-	relPath := fmt.Sprintf("dreams/reflections/%s.md", strings.TrimPrefix(strings.TrimSuffix(key, ".json"), "memories/"))
+	relPath := reflectionKey(key)
 	path := filepath.Join(l.root, filepath.FromSlash(relPath))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -159,7 +176,7 @@ func (l *LocalStore) PutReflection(_ context.Context, key, content string) error
 
 // ListReflections returns all persisted reflections with their modification times.
 func (l *LocalStore) ListReflections(_ context.Context) (map[string]time.Time, error) {
-	reflDir := filepath.Join(l.root, "dreams", "reflections")
+	reflDir := filepath.Join(l.root, "reflections")
 	reflections := map[string]time.Time{}
 	err := filepath.WalkDir(reflDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -175,7 +192,6 @@ func (l *LocalStore) ListReflections(_ context.Context) (map[string]time.Time, e
 		if err != nil {
 			return nil
 		}
-		// Convert dreams/reflections/opencode/ses_abc.md -> memories/opencode/ses_abc.json
 		memoryKey := "memories/" + strings.TrimSuffix(filepath.ToSlash(rel), ".md") + ".json"
 		info, err := d.Info()
 		if err != nil {
@@ -192,7 +208,7 @@ func (l *LocalStore) ListReflections(_ context.Context) (map[string]time.Time, e
 
 // GetReflection reads a reflection's content.
 func (l *LocalStore) GetReflection(_ context.Context, memoryKey string) (string, error) {
-	relPath := fmt.Sprintf("dreams/reflections/%s.md", strings.TrimPrefix(strings.TrimSuffix(memoryKey, ".json"), "memories/"))
+	relPath := reflectionKey(memoryKey)
 	path := filepath.Join(l.root, filepath.FromSlash(relPath))
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -211,37 +227,4 @@ func (l *LocalStore) DeletePrefix(_ context.Context, prefix string) error {
 		return fmt.Errorf("failed to delete %s: %w", prefix, err)
 	}
 	return nil
-}
-
-// ListDreams returns timestamps of all dream snapshots, sorted ascending.
-func (l *LocalStore) ListDreams(_ context.Context) ([]string, error) {
-	historyDir := filepath.Join(l.root, "dreams", "history")
-	entries, err := os.ReadDir(historyDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to list dreams: %w", err)
-	}
-	var timestamps []string
-	for _, e := range entries {
-		if e.IsDir() {
-			timestamps = append(timestamps, e.Name())
-		}
-	}
-	sort.Strings(timestamps)
-	return timestamps, nil
-}
-
-// GetDreamSoul reads the soul from a specific dream snapshot.
-func (l *LocalStore) GetDreamSoul(_ context.Context, timestamp string) (string, error) {
-	path := filepath.Join(l.root, "dreams", "history", timestamp, "soul.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", &NotFoundError{Key: fmt.Sprintf("dreams/history/%s/soul.md", timestamp)}
-		}
-		return "", fmt.Errorf("failed to read dream soul for %s: %w", timestamp, err)
-	}
-	return string(data), nil
 }

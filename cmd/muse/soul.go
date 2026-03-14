@@ -61,6 +61,7 @@ func runDiff(cmd *cobra.Command, store storage.Store) error {
 	if len(souls) < 2 {
 		return fmt.Errorf("need at least 2 soul versions to diff; only found %d", len(souls))
 	}
+	// Compare the second-to-last with the latest
 	prevTimestamp := souls[len(souls)-2]
 	log.Printf("Comparing snapshot %s with current soul\n", prevTimestamp)
 
