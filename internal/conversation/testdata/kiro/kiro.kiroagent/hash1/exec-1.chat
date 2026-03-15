@@ -1,0 +1,23 @@
+{
+  "executionId": "exec-1",
+  "actionId": "act",
+  "context": [],
+  "validations": [],
+  "chat": [
+    {"role": "human", "content": "# Identity\nYou are Kiro, an AI assistant."},
+    {"role": "bot", "content": "I will follow these instructions."},
+    {"role": "bot", "content": ""},
+    {"role": "human", "content": "help me debug this API endpoint\n\n<EnvironmentContext>\nThis is env context.\n</EnvironmentContext>"},
+    {"role": "bot", "content": "I'll look into the API endpoint issue. Let me check the handler code first."},
+    {"role": "tool", "content": ""},
+    {"role": "bot", "content": "I can see the handler. Can you share the specific error you're getting?"}
+  ],
+  "metadata": {
+    "modelId": "claude-sonnet-4-20250514",
+    "modelProvider": "qdev",
+    "workflow": "act",
+    "workflowId": "wf-1",
+    "startTime": 1705312800000,
+    "endTime": 1705312810000
+  }
+}

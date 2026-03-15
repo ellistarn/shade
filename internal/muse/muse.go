@@ -141,7 +141,8 @@ func (m *Muse) Ask(ctx context.Context, input AskInput) (*AskResult, error) {
 }
 
 // Upload scans local sources, diffs against storage, and uploads changed sessions.
-func (m *Muse) Upload(ctx context.Context) (*UploadResult, error) {
+// If sources are specified, only those providers are scanned.
+func (m *Muse) Upload(ctx context.Context, sources ...string) (*UploadResult, error) {
 	log.Println("Listing remote sessions...")
 	existing, err := m.storage.ListSessions(ctx)
 	if err != nil {
@@ -184,6 +185,21 @@ func (m *Muse) Upload(ctx context.Context) (*UploadResult, error) {
 	}
 
 	log.Printf("Diffing %d local sessions against remote...\n", len(local))
+	// Filter by source if specified.
+	if len(sources) > 0 {
+		allowed := make(map[string]bool, len(sources))
+		for _, s := range sources {
+			allowed[s] = true
+		}
+		var filtered []conversation.Session
+		for _, sess := range local {
+			if allowed[sess.Source] {
+				filtered = append(filtered, sess)
+			}
+		}
+		local = filtered
+		log.Printf("Filtered to %d sessions from %v\n", len(local), sources)
+	}
 	var uploaded, skipped int
 	var totalBytes int
 	for i := range local {

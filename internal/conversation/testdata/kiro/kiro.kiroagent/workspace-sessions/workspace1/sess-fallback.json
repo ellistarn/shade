@@ -1,0 +1,10 @@
+{
+  "history": [
+    {"message": {"role": "user", "content": [{"type": "text", "text": "what does this function do?"}], "id": "msg-1"}},
+    {"message": {"role": "assistant", "content": "On it.", "id": "msg-2"}, "executionId": "exec-orphan-1"},
+    {"message": {"role": "user", "content": [{"type": "text", "text": "can you refactor it?"}], "id": "msg-3"}},
+    {"message": {"role": "assistant", "content": "On it.", "id": "msg-4"}, "executionId": "exec-orphan-2"}
+  ],
+  "title": "Fallback Session",
+  "sessionId": "sess-fallback"
+}

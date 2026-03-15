@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ellistarn/muse/internal/conversation"
+	"github.com/ellistarn/muse/internal/distill"
 	"github.com/ellistarn/muse/internal/storage"
 	"github.com/ellistarn/muse/internal/testutil"
 )
@@ -29,7 +30,7 @@ func TestRunDistill_PropagatesRunError(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	err := runDistill(ctx, &stdout, &stderr, store, &testutil.MockLLM{}, &testutil.MockLLM{}, &testutil.MockLLM{}, false, false, 100)
+	err := runDistill(ctx, &stdout, &stderr, store, &testutil.MockLLM{}, &testutil.MockLLM{}, &testutil.MockLLM{}, distill.Options{Limit: 100})
 	if err == nil {
 		t.Fatal("expected error from failing store, got nil")
 	}
@@ -44,7 +45,7 @@ func TestRunDistill_PropagatesLearnError(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	err := runDistill(ctx, &stdout, &stderr, store, nil, &testutil.MockLLM{Err: fmt.Errorf("learn failed")}, &testutil.MockLLM{}, true, false, 0)
+	err := runDistill(ctx, &stdout, &stderr, store, nil, &testutil.MockLLM{Err: fmt.Errorf("learn failed")}, &testutil.MockLLM{}, distill.Options{Learn: true})
 	if err == nil {
 		t.Fatal("expected error from failing LLM, got nil")
 	}
@@ -69,7 +70,7 @@ func TestRunDistill_SuccessfulRun(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	err := runDistill(ctx, &stdout, &stderr, store, mockLLM, mockLLM, mockLLM, false, false, 100)
+	err := runDistill(ctx, &stdout, &stderr, store, mockLLM, mockLLM, mockLLM, distill.Options{Limit: 100})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +92,7 @@ func TestRunDistill_SuccessfulLearn(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	err := runDistill(ctx, &stdout, &stderr, store, nil, mockLLM, mockLLM, true, false, 0)
+	err := runDistill(ctx, &stdout, &stderr, store, nil, mockLLM, mockLLM, distill.Options{Learn: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -20,7 +20,7 @@ func newDistillCmd() *cobra.Command {
 	var learn bool
 	var limit int
 	cmd := &cobra.Command{
-		Use:   "distill",
+		Use:   "distill [source...]",
 		Short: "Distill a muse from conversations",
 		Long: `Discovers new conversations, reflects on them, and distills a muse.md
 that captures how you think. Safe to run repeatedly — only new
@@ -30,14 +30,21 @@ muse is always re-distilled.
 The pipeline is a map-reduce: reflect maps each conversation into observations,
 then learn reduces all observations into a single muse.md.
 
+Optionally pass one or more source names (kiro, claude-code, opencode) to limit
+discovery and reflection to those sources. The learn phase always uses all reflections.
+
 Use --learn to re-distill the muse from existing reflections without
-reprocessing conversations. Use --reflect to reprocess all conversations from scratch.`,
-		Example: `  muse distill              # discover conversations, reflect, and distill muse
-  muse distill --learn      # re-distill muse from existing reflections
-  muse distill --reflect    # re-reflect on all conversations from scratch
-  muse distill --limit 50   # process at most 50 conversations`,
+reprocessing conversations. Use --reflect to reprocess conversations from scratch.`,
+		Example: `  muse distill                        # all sources
+  muse distill kiro                   # only kiro conversations
+  muse distill kiro opencode          # kiro and opencode
+  muse distill kiro --reflect         # re-reflect kiro from scratch
+  muse distill --learn                # re-distill muse from existing reflections
+  muse distill --limit 50             # process at most 50 conversations`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			sources := args
+
 			store, err := newStore(ctx)
 			if err != nil {
 				return err
@@ -50,7 +57,7 @@ reprocessing conversations. Use --reflect to reprocess all conversations from sc
 				if err != nil {
 					return err
 				}
-				result, err := m.Upload(ctx)
+				result, err := m.Upload(ctx, sources...)
 				if err != nil {
 					return err
 				}
@@ -64,6 +71,12 @@ reprocessing conversations. Use --reflect to reprocess all conversations from sc
 				}
 			}
 
+			opts := distill.Options{
+				Reflect: reflect,
+				Limit:   limit,
+				Sources: sources,
+			}
+
 			if learn {
 				learnClient, cerr := bedrock.NewClient(ctx, bedrock.ModelOpus)
 				if cerr != nil {
@@ -74,7 +87,8 @@ reprocessing conversations. Use --reflect to reprocess all conversations from sc
 					return cerr
 				}
 				log.Printf("Learning with %s\n", learnClient.Model())
-				return runDistill(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, nil, learnClient, diffClient, true, false, 0)
+				opts.Learn = true
+				return runDistill(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, nil, learnClient, diffClient, opts)
 			}
 			reflectClient, err := bedrock.NewClient(ctx, bedrock.ModelSonnet)
 			if err != nil {
@@ -85,7 +99,7 @@ reprocessing conversations. Use --reflect to reprocess all conversations from sc
 				return err
 			}
 			log.Printf("Reflecting with %s, learning with %s\n", reflectClient.Model(), learnClient.Model())
-			return runDistill(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, reflectClient, learnClient, nil, false, reflect, limit)
+			return runDistill(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, reflectClient, learnClient, nil, opts)
 		},
 	}
 	cmd.Flags().BoolVar(&reflect, "reflect", false, "re-reflect on all conversations from scratch")
@@ -96,15 +110,15 @@ reprocessing conversations. Use --reflect to reprocess all conversations from sc
 
 // runDistill executes the distill pipeline and prints results. Extracted from the
 // command handler so it can be tested with mock dependencies.
-func runDistill(ctx context.Context, stdout, stderr io.Writer, store storage.Store, reflectLLM, learnLLM, diffLLM distill.LLM, learn, reflect bool, limit int) error {
+func runDistill(ctx context.Context, stdout, stderr io.Writer, store storage.Store, reflectLLM, learnLLM, diffLLM distill.LLM, opts distill.Options) error {
 	var (
 		result *distill.Result
 		err    error
 	)
-	if learn {
+	if opts.Learn {
 		result, err = distill.LearnOnly(ctx, store, learnLLM, diffLLM)
 	} else {
-		result, err = distill.Run(ctx, store, reflectLLM, learnLLM, distill.Options{Reflect: reflect, Limit: limit})
+		result, err = distill.Run(ctx, store, reflectLLM, learnLLM, opts)
 	}
 	if err != nil {
 		return err
@@ -112,7 +126,7 @@ func runDistill(ctx context.Context, stdout, stderr io.Writer, store storage.Sto
 	for _, w := range result.Warnings {
 		fmt.Fprintf(stderr, "warning: %s\n", w)
 	}
-	if !learn {
+	if !opts.Learn {
 		fmt.Fprintf(stdout, "Processed %d conversations (%d pruned)\n", result.Processed, result.Pruned)
 		if result.Remaining > 0 {
 			fmt.Fprintf(stdout, "%d conversations still pending reflection (run distill again)\n", result.Remaining)

@@ -36,8 +36,13 @@ type Result struct {
 type Options struct {
 	// Reflect ignores persisted reflections and re-reflects all conversations.
 	Reflect bool
+	// Learn skips reflect and only re-distills from existing reflections.
+	Learn bool
 	// Limit caps how many conversations to process (0 means no limit).
 	Limit int
+	// Sources filters to conversations from specific sources (e.g. "kiro").
+	// Empty means all sources.
+	Sources []string
 }
 
 // estimateTokens is a convenience alias for inference.EstimateTokens.
@@ -59,13 +64,42 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 		return nil, fmt.Errorf("failed to list reflections: %w", err)
 	}
 
-	// If reprocessing, clear all existing reflections
+	// If reprocessing, clear existing reflections (scoped to sources if set)
 	if opts.Reflect {
-		log.Println("Re-reflecting all conversations (clearing existing reflections)")
-		if err := store.DeletePrefix(ctx, "reflections/"); err != nil {
-			return nil, fmt.Errorf("failed to clear reflections: %w", err)
+		if len(opts.Sources) > 0 {
+			for _, src := range opts.Sources {
+				prefix := "reflections/" + src + "/"
+				log.Printf("Re-reflecting conversations (clearing %s)\n", prefix)
+				if err := store.DeletePrefix(ctx, prefix); err != nil {
+					return nil, fmt.Errorf("failed to clear reflections: %w", err)
+				}
+			}
+		} else {
+			log.Println("Re-reflecting all conversations (clearing reflections/)")
+			if err := store.DeletePrefix(ctx, "reflections/"); err != nil {
+				return nil, fmt.Errorf("failed to clear reflections: %w", err)
+			}
 		}
-		reflections = map[string]time.Time{}
+		// Rebuild reflections map after deletion
+		reflections, err = store.ListReflections(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to re-list reflections: %w", err)
+		}
+	}
+
+	// Filter by sources if specified
+	if len(opts.Sources) > 0 {
+		allowed := make(map[string]bool, len(opts.Sources))
+		for _, s := range opts.Sources {
+			allowed[s] = true
+		}
+		var filtered []storage.SessionEntry
+		for _, e := range entries {
+			if allowed[e.Source] {
+				filtered = append(filtered, e)
+			}
+		}
+		entries = filtered
 	}
 
 	// Diff: conversations without a corresponding reflection (or stale ones) are pending
