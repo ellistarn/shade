@@ -28,6 +28,7 @@ type Result struct {
 	Remaining int // memories still pending reflection
 	Usage     inference.Usage
 	Muse      string // the distilled muse.md
+	Diff      string // what changed from the previous muse version
 	Warnings  []string
 }
 
@@ -178,7 +179,7 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 	}
 
 	log.Printf("Distilling muse from %d reflections...\n", len(allReflections))
-	muse, learnUsage, err := learn(ctx, learnLLM, store, allReflections)
+	muse, diff, learnUsage, err := learn(ctx, learnLLM, reflectLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
@@ -194,13 +195,14 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 		Remaining: remaining,
 		Usage:     reflectUsage.Add(learnUsage),
 		Muse:      muse,
+		Diff:      diff,
 		Warnings:  warnings,
 	}, nil
 }
 
 // LearnOnly re-runs only the learn phase using persisted reflections.
 // Use this to re-synthesize the muse with improved techniques without re-reflecting.
-func LearnOnly(ctx context.Context, store storage.Store, learnLLM LLM) (*Result, error) {
+func LearnOnly(ctx context.Context, store storage.Store, learnLLM, diffLLM LLM) (*Result, error) {
 	allReflections, err := loadAllReflections(ctx, store)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load reflections: %w", err)
@@ -210,7 +212,7 @@ func LearnOnly(ctx context.Context, store storage.Store, learnLLM LLM) (*Result,
 	}
 
 	log.Printf("Re-distilling muse from %d reflections...\n", len(allReflections))
-	muse, usage, err := learn(ctx, learnLLM, store, allReflections)
+	muse, diff, usage, err := learn(ctx, learnLLM, diffLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
@@ -219,15 +221,9 @@ func LearnOnly(ctx context.Context, store storage.Store, learnLLM LLM) (*Result,
 	return &Result{
 		Usage:    usage,
 		Muse:     muse,
+		Diff:     diff,
 		Warnings: nil,
 	}, nil
-}
-
-// writeMuse writes a new timestamped muse version.
-func writeMuse(ctx context.Context, store storage.Store, muse string) error {
-	timestamp := time.Now().UTC().Format(time.RFC3339)
-	log.Printf("Writing muse to muse/versions/%s/...\n", timestamp)
-	return store.PutMuse(ctx, timestamp, muse)
 }
 
 // loadAllReflections fetches every persisted reflection from storage.
@@ -343,21 +339,55 @@ func buildHumanFocusedView(ctx context.Context, client LLM, turns []turn) ([]str
 	return chunks, totalUsage, nil
 }
 
-func learn(ctx context.Context, client LLM, store storage.Store, observations []string) (string, inference.Usage, error) {
+func learn(ctx context.Context, client, diffClient LLM, store storage.Store, observations []string) (muse string, diff string, usage inference.Usage, err error) {
 	if len(observations) == 0 {
-		return "", inference.Usage{}, nil
+		return "", "", inference.Usage{}, nil
 	}
+
+	// Load previous muse for diffing after we generate the new one.
+	previousMuse, _ := store.GetMuse(ctx) // ok if not found (first run)
+
 	input := strings.Join(observations, "\n\n---\n\n")
-	muse, usage, err := client.Converse(ctx, prompts.Learn, input, inference.WithThinking(16000))
+	muse, usage, err = client.Converse(ctx, prompts.Learn, input, inference.WithThinking(16000))
 	if err != nil {
-		return "", usage, err
+		return "", "", usage, err
 	}
 	// Strip markdown code fences the LLM sometimes wraps output in
 	muse = stripCodeFences(muse)
-	if err := writeMuse(ctx, store, muse); err != nil {
-		return "", usage, fmt.Errorf("failed to write muse: %w", err)
+
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	log.Printf("Writing muse to muse/versions/%s/...\n", timestamp)
+	if err := store.PutMuse(ctx, timestamp, muse); err != nil {
+		return "", "", usage, fmt.Errorf("failed to write muse: %w", err)
 	}
-	return muse, usage, nil
+
+	// Compute and save a human-readable diff between versions.
+	diff, diffUsage, derr := computeDiff(ctx, diffClient, previousMuse, muse)
+	usage = usage.Add(diffUsage)
+	if derr != nil {
+		log.Printf("Warning: failed to compute diff: %v\n", derr)
+	} else if diff != "" {
+		if err := store.PutMuseDiff(ctx, timestamp, diff); err != nil {
+			log.Printf("Warning: failed to write diff: %v\n", err)
+		}
+	}
+
+	return muse, diff, usage, nil
+}
+
+// computeDiff asks the LLM to summarize what changed between two muse versions.
+func computeDiff(ctx context.Context, client LLM, previous, current string) (string, inference.Usage, error) {
+	var input string
+	if previous == "" {
+		input = fmt.Sprintf("Previous muse: (none — this is the first version)\n\n---\n\nNew muse:\n%s", current)
+	} else {
+		input = fmt.Sprintf("Previous muse:\n%s\n\n---\n\nNew muse:\n%s", previous, current)
+	}
+	diff, usage, err := client.Converse(ctx, prompts.Diff, input, inference.WithMaxTokens(4096))
+	if err != nil {
+		return "", usage, err
+	}
+	return strings.TrimSpace(diff), usage, nil
 }
 
 // stripCodeFences removes wrapping ```markdown ... ``` from LLM output.

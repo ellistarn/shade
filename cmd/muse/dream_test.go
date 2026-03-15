@@ -29,7 +29,7 @@ func TestRunDream_PropagatesRunError(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	err := runDream(ctx, &stdout, &stderr, store, &testLLM{}, &testLLM{}, false, false, 100)
+	err := runDream(ctx, &stdout, &stderr, store, &testLLM{}, &testLLM{}, &testLLM{}, false, false, 100)
 	if err == nil {
 		t.Fatal("expected error from failing store, got nil")
 	}
@@ -44,7 +44,7 @@ func TestRunDream_PropagatesLearnError(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	err := runDream(ctx, &stdout, &stderr, store, nil, &testLLM{err: fmt.Errorf("learn failed")}, true, false, 0)
+	err := runDream(ctx, &stdout, &stderr, store, nil, &testLLM{err: fmt.Errorf("learn failed")}, &testLLM{}, true, false, 0)
 	if err == nil {
 		t.Fatal("expected error from failing LLM, got nil")
 	}
@@ -69,7 +69,7 @@ func TestRunDream_SuccessfulRun(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	err := runDream(ctx, &stdout, &stderr, store, mockLLM, mockLLM, false, false, 100)
+	err := runDream(ctx, &stdout, &stderr, store, mockLLM, mockLLM, mockLLM, false, false, 100)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestRunDream_SuccessfulLearn(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	err := runDream(ctx, &stdout, &stderr, store, nil, mockLLM, true, false, 0)
+	err := runDream(ctx, &stdout, &stderr, store, nil, mockLLM, mockLLM, true, false, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -182,6 +182,9 @@ func (s *testStore) PutMuse(_ context.Context, _, content string) error {
 	s.muse = content
 	return nil
 }
+func (s *testStore) PutMuseDiff(_ context.Context, _, _ string) error {
+	return nil
+}
 func (s *testStore) ListMuses(_ context.Context) ([]string, error) {
 	return nil, nil
 }
@@ -211,6 +214,7 @@ func (s *failingStore) GetReflection(_ context.Context, _ string) (string, error
 func (s *failingStore) PutReflection(_ context.Context, _, _ string) error { return s.err }
 func (s *failingStore) DeletePrefix(_ context.Context, _ string) error     { return s.err }
 func (s *failingStore) PutMuse(_ context.Context, _, _ string) error       { return s.err }
+func (s *failingStore) PutMuseDiff(_ context.Context, _, _ string) error   { return s.err }
 func (s *failingStore) ListMuses(_ context.Context) ([]string, error) {
 	return nil, s.err
 }

@@ -65,12 +65,16 @@ reprocessing memories. Use --reflect to reprocess all memories from scratch.`,
 			}
 
 			if learn {
-				client, cerr := bedrock.NewClient(ctx, bedrock.ModelOpus)
+				learnClient, cerr := bedrock.NewClient(ctx, bedrock.ModelOpus)
 				if cerr != nil {
 					return cerr
 				}
-				log.Printf("Learning with %s\n", client.Model())
-				return runDream(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, nil, client, true, false, 0)
+				diffClient, cerr := bedrock.NewClient(ctx, bedrock.ModelSonnet)
+				if cerr != nil {
+					return cerr
+				}
+				log.Printf("Learning with %s\n", learnClient.Model())
+				return runDream(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, nil, learnClient, diffClient, true, false, 0)
 			}
 			reflectClient, err := bedrock.NewClient(ctx, bedrock.ModelSonnet)
 			if err != nil {
@@ -81,7 +85,7 @@ reprocessing memories. Use --reflect to reprocess all memories from scratch.`,
 				return err
 			}
 			log.Printf("Reflecting with %s, learning with %s\n", reflectClient.Model(), learnClient.Model())
-			return runDream(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, reflectClient, learnClient, false, reflect, limit)
+			return runDream(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), store, reflectClient, learnClient, reflectClient, false, reflect, limit)
 		},
 	}
 	cmd.Flags().BoolVar(&reflect, "reflect", false, "re-reflect on all memories from scratch")
@@ -92,13 +96,13 @@ reprocessing memories. Use --reflect to reprocess all memories from scratch.`,
 
 // runDream executes the dream pipeline and prints results. Extracted from the
 // command handler so it can be tested with mock dependencies.
-func runDream(ctx context.Context, stdout, stderr io.Writer, store storage.Store, reflectLLM, learnLLM dream.LLM, learn, reflect bool, limit int) error {
+func runDream(ctx context.Context, stdout, stderr io.Writer, store storage.Store, reflectLLM, learnLLM, diffLLM dream.LLM, learn, reflect bool, limit int) error {
 	var (
 		result *dream.Result
 		err    error
 	)
 	if learn {
-		result, err = dream.LearnOnly(ctx, store, learnLLM)
+		result, err = dream.LearnOnly(ctx, store, learnLLM, diffLLM)
 	} else {
 		result, err = dream.Run(ctx, store, reflectLLM, learnLLM, dream.Options{Reflect: reflect, Limit: limit})
 	}
@@ -118,6 +122,9 @@ func runDream(ctx context.Context, stdout, stderr io.Writer, store storage.Store
 		result.Usage.InputTokens/1000, result.Usage.OutputTokens/1000, result.Usage.Cost())
 	if result.Muse != "" {
 		fmt.Fprintf(stdout, "muse.md: ~%d tokens\n", inference.EstimateTokens(result.Muse))
+	}
+	if result.Diff != "" {
+		fmt.Fprintf(stdout, "\n%s\n", result.Diff)
 	}
 	return nil
 }

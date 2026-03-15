@@ -106,6 +106,10 @@ func (m *mockStore) PutMuse(_ context.Context, _, content string) error {
 	return nil
 }
 
+func (m *mockStore) PutMuseDiff(_ context.Context, _, _ string) error {
+	return nil
+}
+
 func (m *mockStore) ListMuses(_ context.Context) ([]string, error) {
 	return nil, nil
 }
@@ -178,9 +182,9 @@ func TestDreamPipeline(t *testing.T) {
 		t.Error("muse missing expected content")
 	}
 
-	// Verify LLM was called: 2 sessions * 3 reflect steps (summarize + extract + refine) + 1 learn = 7 calls
-	if len(llm.calls) != 7 {
-		t.Errorf("LLM calls = %d, want 7", len(llm.calls))
+	// Verify LLM was called: 2 sessions * 3 reflect steps (summarize + extract + refine) + 1 learn + 1 diff = 8 calls
+	if len(llm.calls) != 8 {
+		t.Errorf("LLM calls = %d, want 8", len(llm.calls))
 	}
 }
 
@@ -226,9 +230,9 @@ func TestDreamPipelineLimit(t *testing.T) {
 	if result.Remaining != 3 {
 		t.Errorf("Remaining = %d, want 3", result.Remaining)
 	}
-	// 2 sessions * 3 reflect steps + 1 learn = 7
-	if len(llm.calls) != 7 {
-		t.Errorf("LLM calls = %d, want 7 (2 sessions * 3 reflect steps + 1 learn)", len(llm.calls))
+	// 2 sessions * 3 reflect steps + 1 learn + 1 diff = 8
+	if len(llm.calls) != 8 {
+		t.Errorf("LLM calls = %d, want 8 (2 sessions * 3 reflect steps + 1 learn + 1 diff)", len(llm.calls))
 	}
 }
 
@@ -279,12 +283,12 @@ func TestDreamPipelineLimitIncludesPreviousReflections(t *testing.T) {
 	if len(store.reflections) != 4 {
 		t.Errorf("reflections after second run = %d, want 4", len(store.reflections))
 	}
-	// 2 sessions * 3 reflect steps + 1 learn = 7, and learn should have received all 4 reflections
-	if len(llm.calls) != 7 {
-		t.Errorf("second run LLM calls = %d, want 7", len(llm.calls))
+	// 2 sessions * 3 reflect steps + 1 learn + 1 diff = 8, and learn should have received all 4 reflections
+	if len(llm.calls) != 8 {
+		t.Errorf("second run LLM calls = %d, want 8", len(llm.calls))
 	}
-	// The learn call (last one) should contain all 4 observations joined by ---
-	learnInput := llm.calls[len(llm.calls)-1].user
+	// The learn call (second-to-last) should contain all 4 observations joined by ---
+	learnInput := llm.calls[len(llm.calls)-2].user
 	separators := strings.Count(learnInput, "---")
 	// 4 observations joined by "---" = 3 separators (in the join delimiters)
 	if separators < 3 {
