@@ -17,7 +17,6 @@ import (
 // Compile-time interface checks.
 var (
 	_ storage.Store = (*MemoryStore)(nil)
-	_ storage.Store = (*FailingStore)(nil)
 	_ dream.LLM     = (*MockLLM)(nil)
 )
 
@@ -67,7 +66,7 @@ func (s *MemoryStore) ListSessions(_ context.Context) ([]storage.SessionEntry, e
 func (s *MemoryStore) GetSession(_ context.Context, src, sessionID string) (*memory.Session, error) {
 	sess, ok := s.Data[src+"/"+sessionID]
 	if !ok {
-		return nil, fmt.Errorf("session not found: %s/%s", src, sessionID)
+		return nil, &storage.NotFoundError{Key: fmt.Sprintf("memories/%s/%s.json", src, sessionID)}
 	}
 	return sess, nil
 }
@@ -125,7 +124,7 @@ func (s *MemoryStore) ListReflections(_ context.Context) (map[string]time.Time, 
 func (s *MemoryStore) GetReflection(_ context.Context, memoryKey string) (string, error) {
 	content, ok := s.Reflections[memoryKey]
 	if !ok {
-		return "", fmt.Errorf("reflection not found: %s", memoryKey)
+		return "", &storage.NotFoundError{Key: memoryKey}
 	}
 	return content, nil
 }
@@ -173,57 +172,4 @@ func (m *MockLLM) Converse(_ context.Context, system, user string, _ ...inferenc
 		return m.LearnResponse, usage, nil
 	}
 	return m.ReflectResponse, usage, nil
-}
-
-// ---------------------------------------------------------------------------
-// FailingStore
-// ---------------------------------------------------------------------------
-
-// FailingStore is a storage.Store where every operation returns Err.
-type FailingStore struct {
-	Err error
-}
-
-func (s *FailingStore) ListSessions(_ context.Context) ([]storage.SessionEntry, error) {
-	return nil, s.Err
-}
-
-func (s *FailingStore) GetSession(_ context.Context, _, _ string) (*memory.Session, error) {
-	return nil, s.Err
-}
-
-func (s *FailingStore) PutSession(_ context.Context, _ *memory.Session) (int, error) {
-	return 0, s.Err
-}
-
-func (s *FailingStore) GetMuse(_ context.Context) (string, error) {
-	return "", s.Err
-}
-
-func (s *FailingStore) PutMuse(_ context.Context, _, _ string) error {
-	return s.Err
-}
-
-func (s *FailingStore) ListMuses(_ context.Context) ([]string, error) {
-	return nil, s.Err
-}
-
-func (s *FailingStore) GetMuseVersion(_ context.Context, _ string) (string, error) {
-	return "", s.Err
-}
-
-func (s *FailingStore) ListReflections(_ context.Context) (map[string]time.Time, error) {
-	return nil, s.Err
-}
-
-func (s *FailingStore) GetReflection(_ context.Context, _ string) (string, error) {
-	return "", s.Err
-}
-
-func (s *FailingStore) PutReflection(_ context.Context, _, _ string) error {
-	return s.Err
-}
-
-func (s *FailingStore) DeletePrefix(_ context.Context, _ string) error {
-	return s.Err
 }

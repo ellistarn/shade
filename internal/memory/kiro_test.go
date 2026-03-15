@@ -2,22 +2,12 @@ package memory
 
 import (
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 )
 
-func testdataKiroDir(t *testing.T) string {
-	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("unable to determine test file path")
-	}
-	return filepath.Join(filepath.Dir(file), "testdata", "kiro")
-}
-
 func TestKiro_BasicSession(t *testing.T) {
-	t.Setenv("MUSE_KIRO_DIR", testdataKiroDir(t))
+	t.Setenv("MUSE_KIRO_DIR", "testdata/kiro")
 
 	k := &Kiro{}
 	sessions, err := k.Sessions()
@@ -79,7 +69,7 @@ func TestKiro_BasicSession(t *testing.T) {
 }
 
 func TestKiro_EmptySessionSkipped(t *testing.T) {
-	t.Setenv("MUSE_KIRO_DIR", testdataKiroDir(t))
+	t.Setenv("MUSE_KIRO_DIR", "testdata/kiro")
 
 	k := &Kiro{}
 	sessions, err := k.Sessions()
@@ -108,7 +98,7 @@ func TestKiro_MissingDirectory(t *testing.T) {
 }
 
 func TestKiro_SessionMetadata(t *testing.T) {
-	t.Setenv("MUSE_KIRO_DIR", testdataKiroDir(t))
+	t.Setenv("MUSE_KIRO_DIR", "testdata/kiro")
 
 	k := &Kiro{}
 	sessions, err := k.Sessions()

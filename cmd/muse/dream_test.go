@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ellistarn/muse/internal/memory"
+	"github.com/ellistarn/muse/internal/storage"
 	"github.com/ellistarn/muse/internal/testutil"
 )
 
@@ -24,7 +25,7 @@ func TestDreamCmd_LearnNoStore(t *testing.T) {
 }
 
 func TestRunDream_PropagatesRunError(t *testing.T) {
-	store := &testutil.FailingStore{Err: fmt.Errorf("storage unavailable")}
+	store := &failingStore{err: fmt.Errorf("storage unavailable")}
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
@@ -98,3 +99,32 @@ func TestRunDream_SuccessfulLearn(t *testing.T) {
 		t.Errorf("expected 'Muse distilled', got: %s", stdout.String())
 	}
 }
+
+// failingStore implements storage.Store where all operations return an error.
+type failingStore struct{ err error }
+
+func (s *failingStore) ListSessions(_ context.Context) ([]storage.SessionEntry, error) {
+	return nil, s.err
+}
+func (s *failingStore) GetSession(_ context.Context, _, _ string) (*memory.Session, error) {
+	return nil, s.err
+}
+func (s *failingStore) PutSession(_ context.Context, _ *memory.Session) (int, error) {
+	return 0, s.err
+}
+func (s *failingStore) GetMuse(_ context.Context) (string, error)    { return "", s.err }
+func (s *failingStore) PutMuse(_ context.Context, _, _ string) error { return s.err }
+func (s *failingStore) ListMuses(_ context.Context) ([]string, error) {
+	return nil, s.err
+}
+func (s *failingStore) GetMuseVersion(_ context.Context, _ string) (string, error) {
+	return "", s.err
+}
+func (s *failingStore) ListReflections(_ context.Context) (map[string]time.Time, error) {
+	return nil, s.err
+}
+func (s *failingStore) GetReflection(_ context.Context, _ string) (string, error) {
+	return "", s.err
+}
+func (s *failingStore) PutReflection(_ context.Context, _, _ string) error { return s.err }
+func (s *failingStore) DeletePrefix(_ context.Context, _ string) error     { return s.err }
