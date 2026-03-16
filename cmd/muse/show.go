@@ -6,8 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ellistarn/muse/internal/inference"
-	"github.com/ellistarn/muse/internal/log"
 	"github.com/ellistarn/muse/internal/storage"
 )
 
@@ -33,7 +31,6 @@ Use --diff to print the changelog from the latest distill.`,
 				return runShowDiff(cmd, store)
 			}
 
-			log.Println("Loading muse...")
 			soul, err := store.GetMuse(ctx)
 			if err != nil {
 				if !storage.IsNotFound(err) {
@@ -43,7 +40,6 @@ Use --diff to print the changelog from the latest distill.`,
 				return nil
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(soul))
-			fmt.Fprintf(cmd.ErrOrStderr(), "muse.md: ~%d tokens\n", inference.EstimateTokens(soul))
 			return nil
 		},
 	}

@@ -3,6 +3,7 @@ package distill
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/ellistarn/muse/internal/conversation"
 	"github.com/ellistarn/muse/internal/inference"
-	"github.com/ellistarn/muse/internal/log"
 	"github.com/ellistarn/muse/internal/storage"
 	"github.com/ellistarn/muse/prompts"
 )
@@ -45,15 +45,11 @@ type Options struct {
 	Sources []string
 }
 
-// estimateTokens is a convenience alias for inference.EstimateTokens.
-var estimateTokens = inference.EstimateTokens
-
 // Run executes the distill pipeline: reflect on new conversations, then learn a muse
 // from all reflections. Reflections are the source of truth for what has been
 // processed; there is no separate state file.
 func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opts Options) (*Result, error) {
 	// List all conversations and existing reflections
-	log.Println("Listing conversations...")
 	entries, err := store.ListSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list conversations: %w", err)
@@ -69,16 +65,16 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 		if len(opts.Sources) > 0 {
 			for _, src := range opts.Sources {
 				prefix := "reflections/" + src + "/"
-				log.Printf("Re-reflecting conversations (clearing %s)\n", prefix)
 				if err := store.DeletePrefix(ctx, prefix); err != nil {
 					return nil, fmt.Errorf("failed to clear reflections: %w", err)
 				}
+				fmt.Fprintf(os.Stderr, "Cleared %s\n", prefix)
 			}
 		} else {
-			log.Println("Re-reflecting all conversations (clearing reflections/)")
 			if err := store.DeletePrefix(ctx, "reflections/"); err != nil {
 				return nil, fmt.Errorf("failed to clear reflections: %w", err)
 			}
+			fmt.Fprintln(os.Stderr, "Cleared reflections/")
 		}
 		// Rebuild reflections map after deletion
 		reflections, err = store.ListReflections(ctx)
@@ -118,10 +114,8 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 	})
 	totalPending := len(pending)
 	if opts.Limit > 0 && len(pending) > opts.Limit {
-		log.Printf("Found %d new conversations, limiting to %d\n", len(pending), opts.Limit)
 		pending = pending[:opts.Limit]
 	}
-	log.Printf("Found %d conversations (%d new, %d already reflected)\n", len(entries), totalPending, pruned)
 
 	var mu sync.Mutex
 	var warnings []string
@@ -129,24 +123,7 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 
 	// Reflect on pending conversations in parallel
 	if len(pending) > 0 {
-		log.Println("Estimating token usage...")
-		var totalEstimate int
-		for _, entry := range pending {
-			session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
-			if err != nil {
-				continue
-			}
-			turns := extractTurns(session)
-			for _, t := range turns {
-				totalEstimate += estimateTokens(prompts.ReflectSummarize) + estimateTokens(t.assistantContent)
-				totalEstimate += estimateTokens(t.humanContent)
-			}
-			// Add estimate for extract + refine passes
-			totalEstimate += estimateTokens(prompts.ReflectExtract) + estimateTokens(prompts.ReflectRefine)
-		}
-		log.Printf("Estimated ~%dk input tokens for reflect phase\n", totalEstimate/1000)
-
-		log.Printf("Reflecting on %d conversations...\n", len(pending))
+		reflectStart := time.Now()
 		var completed atomic.Int32
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, 8)
@@ -159,29 +136,23 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 
 				session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
 				if err != nil {
-					n := completed.Add(1)
-					log.Printf("  [%d/%d] (error) %s\n", n, len(pending), entry.Key)
+					completed.Add(1)
 					mu.Lock()
 					warnings = append(warnings, fmt.Sprintf("failed to process %s: %v", entry.Key, err))
 					mu.Unlock()
 					return
 				}
-				msgs := len(session.Messages)
+				start := time.Now()
 				obs, usage, err := reflectOnSession(ctx, reflectLLM, session)
 				n := completed.Add(1)
 				if err != nil {
-					log.Printf("  [%d/%d] (%d msgs) error: %v %s\n", n, len(pending), msgs, err, entry.Key)
+					fmt.Fprintf(os.Stderr, "  [%d/%d] error: %v %s\n", n, len(pending), err, entry.Key)
 					mu.Lock()
 					warnings = append(warnings, fmt.Sprintf("failed to process %s: %v", entry.Key, err))
 					mu.Unlock()
 					return
 				}
-				if obs == "" {
-					log.Printf("  [%d/%d] (%d msgs, skipped) %s\n", n, len(pending), msgs, entry.Key)
-				} else {
-					log.Printf("  [%d/%d] (%d msgs, %d in / %d out tokens, $%.4f) %s\n",
-						n, len(pending), msgs, usage.InputTokens, usage.OutputTokens, usage.Cost(), entry.Key)
-				}
+
 				// Persist immediately so progress survives cancellation
 				if err := store.PutReflection(ctx, entry.Key, obs); err != nil {
 					mu.Lock()
@@ -189,19 +160,19 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 					mu.Unlock()
 					return
 				}
+				fmt.Fprintf(os.Stderr, "  [%d/%d] Reflected %s (%s, $%.4f)\n",
+					n, len(pending), entry.Key, time.Since(start).Round(time.Millisecond), usage.Cost())
 				mu.Lock()
 				reflectUsage = reflectUsage.Add(usage)
 				mu.Unlock()
 			}(entry)
 		}
 		wg.Wait()
-		log.Printf("Reflected on %d conversations ($%.4f)\n", len(pending)-len(warnings), reflectUsage.Cost())
+		fmt.Fprintf(os.Stderr, "Reflected on %d conversations (%s, $%.4f)\n",
+			len(pending)-len(warnings), time.Since(reflectStart).Round(time.Millisecond), reflectUsage.Cost())
 	}
 
 	remaining := totalPending - len(pending)
-	if remaining > 0 {
-		log.Printf("%d conversations still pending reflection (run distill again to continue)\n", remaining)
-	}
 
 	// Learn from ALL reflections (not just new ones)
 	allReflections, err := loadAllReflections(ctx, store)
@@ -215,17 +186,17 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 	// Load previous muse before learning so we can diff afterward.
 	previousMuse, _ := store.GetMuse(ctx) // ok if not found (first run)
 
-	log.Printf("Distilling muse from %d reflections...\n", len(allReflections))
+	learnStart := time.Now()
 	muse, timestamp, learnUsage, err := learn(ctx, learnLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
-	log.Printf("Muse distilled ($%.4f)\n", learnUsage.Cost())
+	fmt.Fprintf(os.Stderr, "Muse distilled (%s, $%.4f)\n", time.Since(learnStart).Round(time.Millisecond), learnUsage.Cost())
 
 	// Diff is a post-processing step, not part of learning.
 	d, diffUsage, derr := computeDiff(ctx, reflectLLM, store, timestamp, previousMuse, muse)
 	if derr != nil {
-		log.Printf("Warning: failed to compute diff: %v\n", derr)
+		fmt.Fprintf(os.Stderr, "Warning: failed to compute diff: %v\n", derr)
 	}
 
 	processed := len(pending) - len(warnings)
@@ -257,16 +228,16 @@ func LearnOnly(ctx context.Context, store storage.Store, learnLLM, diffLLM LLM) 
 	// Load previous muse before learning so we can diff afterward.
 	previousMuse, _ := store.GetMuse(ctx)
 
-	log.Printf("Re-distilling muse from %d reflections...\n", len(allReflections))
+	start := time.Now()
 	muse, timestamp, usage, err := learn(ctx, learnLLM, store, allReflections)
 	if err != nil {
 		return nil, fmt.Errorf("learn failed: %w", err)
 	}
-	log.Printf("Muse distilled ($%.4f)\n", usage.Cost())
+	fmt.Fprintf(os.Stderr, "Muse distilled (%s, $%.4f)\n", time.Since(start).Round(time.Millisecond), usage.Cost())
 
 	d, diffUsage, derr := computeDiff(ctx, diffLLM, store, timestamp, previousMuse, muse)
 	if derr != nil {
-		log.Printf("Warning: failed to compute diff: %v\n", derr)
+		fmt.Fprintf(os.Stderr, "Warning: failed to compute diff: %v\n", derr)
 	}
 
 	return &Result{
@@ -403,7 +374,6 @@ func learn(ctx context.Context, client LLM, store storage.Store, observations []
 	muse = stripCodeFences(muse)
 
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	log.Printf("Writing muse to muse/versions/%s/...\n", timestamp)
 	if err := store.PutMuse(ctx, timestamp, muse); err != nil {
 		return "", "", usage, fmt.Errorf("failed to write muse: %w", err)
 	}
@@ -429,7 +399,7 @@ func computeDiff(ctx context.Context, client LLM, store storage.Store, timestamp
 	}
 
 	if werr := store.PutMuseDiff(ctx, timestamp, d); werr != nil {
-		log.Printf("Warning: failed to write diff: %v\n", werr)
+		fmt.Fprintf(os.Stderr, "Warning: failed to write diff: %v\n", werr)
 	}
 	return d, usage, nil
 }
