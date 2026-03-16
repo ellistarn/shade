@@ -176,8 +176,12 @@ func Run(ctx context.Context, store storage.Store, reflectLLM, learnLLM LLM, opt
 					mu.Unlock()
 					return
 				}
-				log.Printf("  [%d/%d] (%d msgs, %d in / %d out tokens, $%.4f) %s\n",
-					n, len(pending), msgs, usage.InputTokens, usage.OutputTokens, usage.Cost(), entry.Key)
+				if obs == "" {
+					log.Printf("  [%d/%d] (%d msgs, skipped) %s\n", n, len(pending), msgs, entry.Key)
+				} else {
+					log.Printf("  [%d/%d] (%d msgs, %d in / %d out tokens, $%.4f) %s\n",
+						n, len(pending), msgs, usage.InputTokens, usage.OutputTokens, usage.Cost(), entry.Key)
+				}
 				// Persist immediately so progress survives cancellation
 				if err := store.PutReflection(ctx, entry.Key, obs); err != nil {
 					mu.Lock()
