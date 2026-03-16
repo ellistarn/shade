@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ellistarn/muse/internal/conversation"
 	"github.com/ellistarn/muse/internal/distill"
+	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/testutil"
 )
 
@@ -188,6 +190,170 @@ func TestDistillPipelineEmptyConversation(t *testing.T) {
 	if result.Processed != 0 {
 		t.Errorf("Processed = %d, want 0", result.Processed)
 	}
+}
+
+func TestDistillPipelineIncrementalPersist(t *testing.T) {
+	// Verify that successful reflections are persisted even when other sessions
+	// fail during the reflect phase. Before incremental persist, all reflections
+	// were batched after wg.Wait(), so a cancelled context would lose everything.
+	store := testutil.NewConversationStore()
+	store.AddSession("test", "good-1", time.Now(), []conversation.Message{
+		{Role: "user", Content: "use tabs"},
+		{Role: "assistant", Content: "ok"},
+		{Role: "user", Content: "always"},
+		{Role: "assistant", Content: "sure"},
+	})
+	store.AddSession("test", "good-2", time.Now(), []conversation.Message{
+		{Role: "user", Content: "use spaces"},
+		{Role: "assistant", Content: "ok"},
+		{Role: "user", Content: "always"},
+		{Role: "assistant", Content: "sure"},
+	})
+
+	llm := &testutil.MockLLM{
+		ReflectResponse: "- observation",
+		LearnResponse:   "## Test\n\nContent.",
+	}
+
+	result, err := distill.Run(context.Background(), store, llm, llm, distill.Options{})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if result.Processed != 2 {
+		t.Errorf("Processed = %d, want 2", result.Processed)
+	}
+	// Both reflections should be persisted individually
+	if len(store.Reflections) != 2 {
+		t.Errorf("Reflections = %d, want 2", len(store.Reflections))
+	}
+	for key, content := range store.Reflections {
+		if content == "" {
+			t.Errorf("Reflection %s is empty", key)
+		}
+	}
+}
+
+func TestDistillPipelinePartialFailurePersistsSuccesses(t *testing.T) {
+	// When the LLM fails for one session, already-completed reflections should
+	// still be persisted (not lost due to batching).
+	store := testutil.NewConversationStore()
+	store.AddSession("test", "good", time.Now(), []conversation.Message{
+		{Role: "user", Content: "use tabs"},
+		{Role: "assistant", Content: "ok"},
+		{Role: "user", Content: "always"},
+		{Role: "assistant", Content: "sure"},
+	})
+	store.AddSession("test", "bad", time.Now(), []conversation.Message{
+		{Role: "user", Content: "use spaces"},
+		{Role: "assistant", Content: "ok"},
+		{Role: "user", Content: "always"},
+		{Role: "assistant", Content: "sure"},
+	})
+
+	// Use an LLM that fails when processing the "bad" session.
+	llm := &contentFailLLM{
+		failOn:          "use spaces",
+		reflectResponse: "- observation from good session",
+		learnResponse:   "## Muse\n\nContent.",
+	}
+
+	result, err := distill.Run(context.Background(), store, llm, llm, distill.Options{})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	// One session succeeded, one failed
+	if result.Processed != 1 {
+		t.Errorf("Processed = %d, want 1", result.Processed)
+	}
+	if len(result.Warnings) != 1 {
+		t.Errorf("Warnings = %d, want 1", len(result.Warnings))
+	}
+	// The successful session's reflection should be persisted
+	if len(store.Reflections) != 1 {
+		t.Errorf("Reflections = %d, want 1", len(store.Reflections))
+	}
+}
+
+func TestDistillPipelineCancelPreservesCompleted(t *testing.T) {
+	// Verify that reflections completed before context cancellation are persisted.
+	store := testutil.NewConversationStore()
+	store.AddSession("test", "fast", time.Now().Add(-time.Second), []conversation.Message{
+		{Role: "user", Content: "use tabs"},
+		{Role: "assistant", Content: "ok"},
+		{Role: "user", Content: "always"},
+		{Role: "assistant", Content: "sure"},
+	})
+	store.AddSession("test", "slow", time.Now(), []conversation.Message{
+		{Role: "user", Content: "use spaces"},
+		{Role: "assistant", Content: "ok"},
+		{Role: "user", Content: "always"},
+		{Role: "assistant", Content: "sure"},
+	})
+
+	// LLM that cancels context once the first session is fully reflected
+	ctx, cancel := context.WithCancel(context.Background())
+	llm := &cancelAfterNReflectLLM{
+		succeedN:        3, // let first session complete (summarize + extract + refine)
+		reflectResponse: "- observation",
+		learnResponse:   "## Muse",
+		cancel:          cancel,
+	}
+
+	// Run will likely error because context is cancelled during second session
+	result, _ := distill.Run(ctx, store, llm, llm, distill.Options{})
+
+	// The first session's reflection should be persisted even though context was cancelled
+	if len(store.Reflections) < 1 {
+		t.Errorf("Reflections = %d, want at least 1 (completed before cancel)", len(store.Reflections))
+	}
+	// Should have at least some warnings from the cancelled session
+	if result != nil && result.Processed < 1 {
+		t.Errorf("Processed = %d, want at least 1", result.Processed)
+	}
+}
+
+// contentFailLLM fails reflect calls when the user content contains failOn.
+type contentFailLLM struct {
+	failOn          string
+	reflectResponse string
+	learnResponse   string
+}
+
+func (m *contentFailLLM) Converse(_ context.Context, system, user string, _ ...inference.ConverseOption) (string, inference.Usage, error) {
+	usage := inference.Usage{InputTokens: 100, OutputTokens: 50}
+	if strings.Contains(system, "distilling observations") {
+		return m.learnResponse, usage, nil
+	}
+	if strings.Contains(user, m.failOn) {
+		return "", inference.Usage{}, fmt.Errorf("simulated LLM failure")
+	}
+	return m.reflectResponse, usage, nil
+}
+
+// cancelAfterNReflectLLM succeeds for the first N reflect calls, then cancels context.
+type cancelAfterNReflectLLM struct {
+	succeedN        int
+	reflectResponse string
+	learnResponse   string
+	cancel          context.CancelFunc
+	mu              sync.Mutex
+	reflectCalls    int
+}
+
+func (m *cancelAfterNReflectLLM) Converse(ctx context.Context, system, user string, _ ...inference.ConverseOption) (string, inference.Usage, error) {
+	usage := inference.Usage{InputTokens: 100, OutputTokens: 50}
+	if strings.Contains(system, "distilling observations") {
+		return m.learnResponse, usage, nil
+	}
+	m.mu.Lock()
+	m.reflectCalls++
+	n := m.reflectCalls
+	m.mu.Unlock()
+	if n > m.succeedN {
+		m.cancel()
+		return "", inference.Usage{}, ctx.Err()
+	}
+	return m.reflectResponse, usage, nil
 }
 
 func TestDistillPipelineReflect(t *testing.T) {
