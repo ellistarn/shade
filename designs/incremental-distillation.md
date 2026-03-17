@@ -118,20 +118,25 @@ and reflects the EWMA principle: recent observations matter most.
 ## Cost
 
 The observe step is shared across all approaches. Post-observe cost per sync (3 new conversations,
-~15 new observations):
+~15 new observations, ~15 clusters, Opus with 16k thinking budget):
 
 | | Map-reduce | Clustered | Incremental |
 |---|---|---|---|
-| Classify | — | 15 Sonnet calls | — |
-| Embed | — | 15 Titan calls | — |
-| Synthesize | — | ~20 Sonnet calls | — |
-| Learn/Merge/Update | 1 Opus, ~300k tokens | 1 Opus, ~20k tokens | 1 Opus, ~7k tokens |
+| Classify | — | ~$0.07 | — |
+| Embed | — | ~$0.01 | — |
+| Synthesize | — | ~$0.90 | — |
+| Learn/Merge/Update | ~$5+ (300k in) | ~$1.80 (20k in) | ~$1.60 (7k in) |
+| **Total** | **~$5+** | **~$2.80** | **~$1.60** |
 
-Map-reduce's Opus input grows linearly with total observations and eventually overflows. Clustered
-stays bounded but requires ~35 Sonnet + 15 Titan calls per sync. Incremental is one small Opus call.
+Thinking tokens dominate the Opus call in both clustered and incremental. The Sonnet calls in
+clustered add ~$1 per sync. Incremental is ~40% cheaper than clustered per sync — meaningful
+but not dramatic.
 
-At 10k total observations, map-reduce is broken (~3M input tokens). Clustered's synthesize step
-grows with cluster count. Incremental's update is still ~7k tokens — the muse plus the new batch.
+The cost advantage widens at scale: map-reduce's Opus input grows linearly with total observations
+and eventually overflows. Clustered's synthesize step grows with cluster count. Incremental's
+update is always ~7k tokens — the muse plus the new batch.
+
+The primary advantage is simplicity, not cost.
 
 ## Decisions
 
