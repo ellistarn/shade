@@ -90,10 +90,6 @@ func (m *Muse) Ask(ctx context.Context, input AskInput) (*AskResult, error) {
 			return nil, err
 		}
 		session = s
-		session.Messages = append(session.Messages, types.Message{
-			Role:    types.ConversationRoleUser,
-			Content: []types.ContentBlock{&types.ContentBlockMemberText{Value: input.Question}},
-		})
 	} else {
 		// New conversation
 		soul := m.soul
@@ -102,14 +98,18 @@ func (m *Muse) Ask(ctx context.Context, input AskInput) (*AskResult, error) {
 		}
 		session = &Session{
 			System: fmt.Sprintf(systemPrompt, soul),
-			Messages: []types.Message{
-				{
-					Role:    types.ConversationRoleUser,
-					Content: []types.ContentBlock{&types.ContentBlockMemberText{Value: input.Question}},
-				},
-			},
 		}
 	}
+
+	// Hold the session lock for the entire turn so concurrent calls on the
+	// same session are serialized and Messages is never mutated concurrently.
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	session.Messages = append(session.Messages, types.Message{
+		Role:    types.ConversationRoleUser,
+		Content: []types.ContentBlock{&types.ContentBlockMemberText{Value: input.Question}},
+	})
 
 	var result *bedrock.ConverseResult
 	var err error

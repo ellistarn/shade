@@ -9,7 +9,9 @@ import (
 )
 
 // Session holds a Bedrock conversation's message history so it can be continued.
+// The mutex serializes concurrent Ask calls that target the same session.
 type Session struct {
+	mu       sync.Mutex
 	ID       string
 	System   string          // system prompt for the conversation
 	Messages []types.Message // full conversation history

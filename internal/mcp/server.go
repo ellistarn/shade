@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -12,10 +13,15 @@ import (
 )
 
 // NewServer creates an MCP server with an ask tool.
-// The server holds a single conversation session — the MCP connection is the session.
+// Each MCP client connection gets its own conversation session so concurrent
+// clients never share state.
 func NewServer(m *muse.Muse) *server.MCPServer {
 	srv := server.NewMCPServer("muse", "0.1.0", server.WithToolCapabilities(false))
-	var sessionID string
+
+	// Map from MCP client session ID → muse conversation session ID.
+	var mu sync.Mutex
+	museSessionByClient := make(map[string]string)
+
 	srv.AddTool(
 		mcp.NewTool("ask",
 			mcp.WithDescription(prompts.Tool),
@@ -26,14 +32,29 @@ func NewServer(m *muse.Muse) *server.MCPServer {
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
+
+			// Resolve the MCP-level client session to a muse conversation session.
+			clientID := ""
+			if cs := server.ClientSessionFromContext(ctx); cs != nil {
+				clientID = cs.SessionID()
+			}
+
+			mu.Lock()
+			museSessionID := museSessionByClient[clientID]
+			mu.Unlock()
+
 			result, err := m.Ask(ctx, muse.AskInput{
 				Question:  question,
-				SessionID: sessionID,
+				SessionID: museSessionID,
 			})
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("failed to ask: %v", err)), nil
 			}
-			sessionID = result.SessionID
+
+			mu.Lock()
+			museSessionByClient[clientID] = result.SessionID
+			mu.Unlock()
+
 			return mcp.NewToolResultText(result.Response), nil
 		},
 	)
