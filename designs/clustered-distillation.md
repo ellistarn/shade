@@ -118,7 +118,7 @@ partitions. This also normalizes for frequency: a pattern that dominates by volu
 one cluster with the same token budget as a smaller cluster, preventing it from drowning out rarer
 themes.
 
-### Why compress assistant messages?
+### Why mechanical compression over summarization?
 
 Summarizing assistant messages before extraction would reduce token count but costs an LLM call per
 turn and is lossy — a compressed summary may omit the detail that provoked a correction. Instead,
