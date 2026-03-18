@@ -17,19 +17,17 @@ messages reveal about how they think. The extract prompt requires a structured `
 on each output line — lines without the prefix are discarded at parse time. A refine step filters
 candidates to only those that would change how the muse behaves.
 
-The surviving observations are classified into short thematic labels, embedded, and grouped into
-clusters. Primary grouping is by exact label match — the classifier is given existing labels and
-converges on a shared vocabulary, so observations on the same theme get the same label. HDBSCAN
-runs on the ungrouped residual to find additional structure. Each cluster is synthesized
-independently, then merged with any unclustered noise observations into the final muse.md. When the
-observation count is too small for clustering to add value, the pipeline falls back to single-pass
-compose.
+The surviving observations are classified into short thematic labels and grouped into clusters.
+Grouping is by exact label match — the classifier is given existing labels and converges on a shared
+vocabulary, so observations on the same theme get the same label. Labels with 3+ observations form
+clusters; the rest flow through as noise. Each cluster is synthesized independently, then merged with
+noise observations into the final muse.md.
 
 ```
 conversations ─► OBSERVE ─► observations ─► CLUSTER ─► samples ─► COMPOSE ─► muse.md
 
 OBSERVE    compress → extract (Observation: prefix) → refine → parse
-CLUSTER    classify (label convergence) → embed → group (label match + HDBSCAN) → sample
+CLUSTER    classify (label convergence) → group (label match) → sample
 COMPOSE    per-cluster synthesis → merge with noise
 ```
 
@@ -53,18 +51,15 @@ correctness; the dependency chain self-invalidates:
 ```
 conversation → (observe prompt) → observations
 observation → (classify prompt) → classification
-classification → (embedding model) → embedding
 ```
 
-Change a conversation and its observations invalidate, which invalidates classifications, which
-invalidates embeddings. Change the classify prompt and all classifications invalidate, cascading to
-embeddings. Correctness is structural, not procedural.
+Change a conversation and its observations invalidate, which invalidates classifications. Change the
+classify prompt and all classifications invalidate. Correctness is structural, not procedural.
 
 Fingerprints per layer:
 
 - **Observation**: `hash(conversation.UpdatedAt, observePromptHash)`
 - **Classification**: `hash(observationContent, classifyPromptHash)`
-- **Embedding**: `hash(classificationContent, embeddingModel)`
 
 Grouping, sampling, synthesis, and merge are recomputed each run — they're cheap relative to the
 cached stages.
@@ -83,15 +78,14 @@ distillation system, nested under `distill/`.
 ├── distill/
 │   ├── observations/{source}/{session_id}.json           # syncable
 │   ├── classifications/{source}/{session_id}.json        # syncable
-│   ├── embeddings/{source}/{session_id}.json             # syncable
 │   └── clusters/{id}.json                                # ephemeral, not synced, overwritten each run
 ├── muse/versions/{timestamp}/muse.md                     # output, syncable
 ├── muse/versions/{timestamp}/diff.md                     # output, syncable
 ```
 
 Observations are a JSON array of discrete strings per conversation — each observation gets its own
-classification and embedding. Classifications and embeddings are stored one file per conversation
-containing all per-observation entries:
+classification. Classifications are stored one file per conversation containing all per-observation
+entries:
 
 ```json
 // distill/observations/{source}/{session_id}.json
@@ -101,12 +95,6 @@ containing all per-observation entries:
 {"fingerprint": "def456", "items": [
   {"observation": "obs1", "classification": "root cause over symptom fixing"},
   {"observation": "obs2", "classification": "abstraction must earn its cost"}
-]}
-
-// distill/embeddings/{source}/{session_id}.json
-{"fingerprint": "ghi789", "items": [
-  {"classification": "root cause over symptom fixing", "vector": [0.1, 0.2, ...]},
-  {"classification": "abstraction must earn its cost", "vector": [0.3, 0.4, ...]}
 ]}
 ```
 
@@ -144,30 +132,31 @@ meta-commentary).
 
 ### Why label convergence in classification?
 
-The classifier receives each observation individually and assigns a short thematic label (3-8 words)
-naming the thinking pattern it's an instance of. Critically, the classifier also receives the list of
-labels already assigned to other observations and is instructed to reuse an existing label when one
-fits.
+The classifier receives observations in batches (up to 10 per call) and assigns each a short
+thematic label (3-8 words) naming the thinking pattern it's an instance of. Critically, the
+classifier also receives the list of labels already assigned to other observations and is instructed
+to reuse an existing label when one fits. Sessions are processed sequentially so each batch sees the
+full label vocabulary from prior sessions, preserving convergence.
 
 Without label convergence, each observation gets a unique paraphrase ("abstraction must earn its
-cost" vs. "abstraction must earn its keep") and the embedding space is flat — everything is
+cost" vs. "abstraction must earn its keep") and grouping becomes impossible — everything is
 equidistant. With convergence, the classifier maps both to the same label, and grouping becomes
 trivial: exact string match.
 
-This emerged from observing that HDBSCAN couldn't find density structure in 168 observations with
-median cosine distance 0.92. The problem wasn't the clustering algorithm — it was that
-classifications were paraphrasing, not categorizing. Fixing the input was more effective than tuning
-the algorithm.
+### Why label-match only?
 
-### Why two-phase grouping (label match + HDBSCAN)?
+Grouping is exact label match — observations with the same classification label form a cluster. This
+works because label convergence produces a shared vocabulary with ~60% reuse.
 
-Primary grouping is exact label match — observations with the same classification label form a
-cluster. This works because label convergence produces a shared vocabulary with ~60% reuse.
+We initially designed a two-phase approach (label-match followed by HDBSCAN over embeddings for the
+ungrouped residual) but found that classification convergence eliminates the sub-cluster variation
+HDBSCAN was meant to capture. With 168 observations, median cosine distance was 0.92 — the embedding
+space was flat because labels were paraphrasing, not categorizing. Fixing classification upstream
+made the downstream algorithm irrelevant.
 
-HDBSCAN runs on the ungrouped residual (observations whose labels appear only once) to find
-additional structure via embedding similarity. It discovers cluster count automatically and explicitly
-labels noise. This is a fallback, not the primary mechanism — at current scale, label match does most
-of the work.
+Observations whose labels appear fewer than 3 times flow through as noise rather than forming
+micro-clusters. This threshold prevents synthesis from operating on groups too small to have a
+meaningful pattern.
 
 ### Why preserve noise?
 

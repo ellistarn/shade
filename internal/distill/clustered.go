@@ -1365,7 +1365,7 @@ func runMerge(
 		}
 	}
 
-	muse, usage, err := llm.Converse(ctx, prompts.Merge, input.String(), inference.WithThinking(8000))
+	muse, usage, err := llm.Converse(ctx, prompts.Merge, input.String(), inference.WithThinking(16000))
 	if err != nil {
 		return "", "", usage, err
 	}
