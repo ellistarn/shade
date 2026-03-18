@@ -11,7 +11,7 @@ import (
 
 // ArtifactStore handles reading and writing distill pipeline artifacts.
 // Artifacts live under {root}/distill/ and are organized by type, source,
-// and session ID. This is separate from the main storage.Store interface
+// and conversation ID. This is separate from the main storage.Store interface
 // because distill artifacts are pipeline internals, not domain objects.
 type ArtifactStore struct {
 	root string // e.g. ~/.muse
@@ -23,36 +23,36 @@ func NewArtifactStore(root string) *ArtifactStore {
 }
 
 // distillPath returns the full path for a distill artifact.
-// pattern: {root}/distill/{kind}/{source}/{sessionID}.json
-func (s *ArtifactStore) distillPath(kind, source, sessionID string) string {
-	return filepath.Join(s.root, "distill", kind, source, sessionID+".json")
+// pattern: {root}/distill/{kind}/{source}/{conversationID}.json
+func (s *ArtifactStore) distillPath(kind, source, conversationID string) string {
+	return filepath.Join(s.root, "distill", kind, source, conversationID+".json")
 }
 
 // PutObservations writes observations for a conversation.
-func (s *ArtifactStore) PutObservations(source, sessionID string, obs *Observations) error {
-	return s.putJSON(s.distillPath("observations", source, sessionID), obs)
+func (s *ArtifactStore) PutObservations(source, conversationID string, obs *Observations) error {
+	return s.putJSON(s.distillPath("observations", source, conversationID), obs)
 }
 
 // GetObservations reads observations for a conversation.
 // Returns os.ErrNotExist (via os.IsNotExist) when no artifact is found.
-func (s *ArtifactStore) GetObservations(source, sessionID string) (*Observations, error) {
+func (s *ArtifactStore) GetObservations(source, conversationID string) (*Observations, error) {
 	var obs Observations
-	if err := s.getJSON(s.distillPath("observations", source, sessionID), &obs); err != nil {
+	if err := s.getJSON(s.distillPath("observations", source, conversationID), &obs); err != nil {
 		return nil, err
 	}
 	return &obs, nil
 }
 
 // PutLabels writes labels for a conversation.
-func (s *ArtifactStore) PutLabels(source, sessionID string, lbl *Labels) error {
-	return s.putJSON(s.distillPath("labels", source, sessionID), lbl)
+func (s *ArtifactStore) PutLabels(source, conversationID string, lbl *Labels) error {
+	return s.putJSON(s.distillPath("labels", source, conversationID), lbl)
 }
 
 // GetLabels reads labels for a conversation.
 // Returns os.ErrNotExist (via os.IsNotExist) when no artifact is found.
-func (s *ArtifactStore) GetLabels(source, sessionID string) (*Labels, error) {
+func (s *ArtifactStore) GetLabels(source, conversationID string) (*Labels, error) {
 	var lbl Labels
-	if err := s.getJSON(s.distillPath("labels", source, sessionID), &lbl); err != nil {
+	if err := s.getJSON(s.distillPath("labels", source, conversationID), &lbl); err != nil {
 		return nil, err
 	}
 	return &lbl, nil
@@ -78,13 +78,13 @@ func (s *ArtifactStore) DeleteNormalization() error {
 	return os.Remove(filepath.Join(s.root, "distill", "normalization.json"))
 }
 
-// ListObservations returns all (source, sessionID) pairs that have observations.
-func (s *ArtifactStore) ListObservations() ([]SourceSession, error) {
+// ListObservations returns all (source, conversationID) pairs that have observations.
+func (s *ArtifactStore) ListObservations() ([]SourceConversation, error) {
 	return s.listArtifacts("observations")
 }
 
-// ListLabels returns all (source, sessionID) pairs that have labels.
-func (s *ArtifactStore) ListLabels() ([]SourceSession, error) {
+// ListLabels returns all (source, conversationID) pairs that have labels.
+func (s *ArtifactStore) ListLabels() ([]SourceConversation, error) {
 	return s.listArtifacts("labels")
 }
 
@@ -103,15 +103,15 @@ func (s *ArtifactStore) DeleteLabels() error {
 	return os.RemoveAll(filepath.Join(s.root, "distill", "labels"))
 }
 
-// SourceSession identifies a conversation by its source and session ID.
-type SourceSession struct {
-	Source    string
-	SessionID string
+// SourceConversation identifies a conversation by its source and conversation ID.
+type SourceConversation struct {
+	Source         string
+	ConversationID string
 }
 
-func (s *ArtifactStore) listArtifacts(kind string) ([]SourceSession, error) {
+func (s *ArtifactStore) listArtifacts(kind string) ([]SourceConversation, error) {
 	dir := filepath.Join(s.root, "distill", kind)
-	var results []SourceSession
+	var results []SourceConversation
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -130,9 +130,9 @@ func (s *ArtifactStore) listArtifacts(kind string) ([]SourceSession, error) {
 		if len(parts) != 2 {
 			return nil
 		}
-		results = append(results, SourceSession{
-			Source:    parts[0],
-			SessionID: strings.TrimSuffix(parts[1], ".json"),
+		results = append(results, SourceConversation{
+			Source:         parts[0],
+			ConversationID: strings.TrimSuffix(parts[1], ".json"),
 		})
 		return nil
 	})

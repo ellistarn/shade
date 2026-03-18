@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Kiro reads sessions from Kiro's workspace session files, enriched with
+// Kiro reads conversations from Kiro's workspace session files, enriched with
 // assistant completions from .chat files. Kiro's session JSON only stores
 // placeholder assistant messages ("On it."); the actual completions live in
 // separate .chat files linked by executionId.
@@ -18,7 +18,7 @@ type Kiro struct{}
 
 func (k *Kiro) Name() string { return "Kiro" }
 
-func (k *Kiro) Sessions() ([]Session, error) {
+func (k *Kiro) Conversations() ([]Conversation, error) {
 	kiroDir := os.Getenv("MUSE_KIRO_DIR")
 	if kiroDir == "" {
 		dir, err := defaultKiroDir()
@@ -47,7 +47,7 @@ func (k *Kiro) Sessions() ([]Session, error) {
 	if err != nil {
 		return nil, nil
 	}
-	var sessions []Session
+	var conversations []Conversation
 	for _, wd := range workspaceDirs {
 		if !wd.IsDir() {
 			continue
@@ -58,15 +58,15 @@ func (k *Kiro) Sessions() ([]Session, error) {
 			continue
 		}
 		for _, entry := range index {
-			sessionPath := filepath.Join(wsPath, entry.SessionID+".json")
-			session, err := parseKiroSession(sessionPath, entry, chatIndex)
-			if err != nil || session == nil {
+			conversationPath := filepath.Join(wsPath, entry.SessionID+".json")
+			conv, err := parseKiroConversation(conversationPath, entry, chatIndex)
+			if err != nil || conv == nil {
 				continue
 			}
-			sessions = append(sessions, *session)
+			conversations = append(conversations, *conv)
 		}
 	}
-	return sessions, nil
+	return conversations, nil
 }
 
 func defaultKiroDir() (string, error) {
@@ -84,7 +84,7 @@ func defaultKiroDir() (string, error) {
 // and builds an executionId -> file path index.
 //
 // NOTE: There are typically orphan .chat files (~hundreds) that aren't linked
-// to any session. These represent older sessions whose session JSON was cleaned
+// to any conversation. These represent older conversations whose session JSON was cleaned
 // up. We skip them for now but they could be recovered in the future.
 func buildChatIndex(agentDir string) map[string]string {
 	index := make(map[string]string)
@@ -157,7 +157,7 @@ type kiroMessage struct {
 	Content json.RawMessage `json:"content"`
 }
 
-func parseKiroSession(path string, indexEntry kiroIndexEntry, chatIndex map[string]string) (*Session, error) {
+func parseKiroConversation(path string, indexEntry kiroIndexEntry, chatIndex map[string]string) (*Conversation, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -167,51 +167,51 @@ func parseKiroSession(path string, indexEntry kiroIndexEntry, chatIndex map[stri
 		return nil, err
 	}
 
-	session := &Session{
-		SchemaVersion: 1,
-		Source:        "kiro",
-		SessionID:     indexEntry.SessionID,
-		Project:       indexEntry.WorkspaceDirectory,
-		Title:         indexEntry.Title,
+	conv := &Conversation{
+		SchemaVersion:  1,
+		Source:         "kiro",
+		ConversationID: indexEntry.SessionID,
+		Project:        indexEntry.WorkspaceDirectory,
+		Title:          indexEntry.Title,
 	}
 
 	if ms, err := strconv.ParseInt(indexEntry.DateCreated, 10, 64); err == nil {
-		session.CreatedAt = time.UnixMilli(ms)
+		conv.CreatedAt = time.UnixMilli(ms)
 	}
 	if info, err := os.Stat(path); err == nil {
-		session.UpdatedAt = info.ModTime()
+		conv.UpdatedAt = info.ModTime()
 	}
 
 	// Find the last execution's .chat file. Each .chat file contains the
 	// cumulative conversation, so the last one has the full history.
 	if chatFile, chatPath := findLastChatFile(file.History, chatIndex); chatFile != nil {
-		session.Messages = parseChatFileMessages(chatFile)
+		conv.Messages = parseChatFileMessages(chatFile)
 		if chatFile.Metadata.ModelID != "" {
-			for i := range session.Messages {
-				if session.Messages[i].Role == "assistant" {
-					session.Messages[i].Model = chatFile.Metadata.ModelID
+			for i := range conv.Messages {
+				if conv.Messages[i].Role == "assistant" {
+					conv.Messages[i].Model = chatFile.Metadata.ModelID
 				}
 			}
 		}
 		// Use .chat file mod time as UpdatedAt since it better reflects
 		// when the conversation content last changed.
 		if info, err := os.Stat(chatPath); err == nil {
-			session.UpdatedAt = info.ModTime()
+			conv.UpdatedAt = info.ModTime()
 		}
 	}
 
 	// Fall back to session JSON if no .chat file found or it yielded no messages.
-	if len(session.Messages) == 0 {
-		session.Messages = parseSessionMessages(file.History)
+	if len(conv.Messages) == 0 {
+		conv.Messages = parseSessionMessages(file.History)
 	}
 
-	if len(session.Messages) == 0 {
+	if len(conv.Messages) == 0 {
 		return nil, nil
 	}
-	return session, nil
+	return conv, nil
 }
 
-// findLastChatFile walks session history in order and returns the parsed .chat
+// findLastChatFile walks conversation history in order and returns the parsed .chat
 // file and its path for the last executionId that has a matching file.
 func findLastChatFile(history []kiroHistoryEntry, chatIndex map[string]string) (*kiroChatFile, string) {
 	var lastPath string

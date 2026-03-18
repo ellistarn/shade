@@ -79,7 +79,7 @@ type Options struct {
 // processed; there is no separate state file.
 func Run(ctx context.Context, store storage.Store, observeLLM, learnLLM LLM, opts Options) (*Result, error) {
 	// List all conversations and existing observations
-	entries, err := store.ListSessions(ctx)
+	entries, err := store.ListConversations(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list conversations: %w", err)
 	}
@@ -120,7 +120,7 @@ func Run(ctx context.Context, store storage.Store, observeLLM, learnLLM LLM, opt
 		for _, s := range opts.Sources {
 			allowed[s] = true
 		}
-		var filtered []storage.SessionEntry
+		var filtered []storage.ConversationEntry
 		for _, e := range entries {
 			if allowed[e.Source] {
 				filtered = append(filtered, e)
@@ -130,7 +130,7 @@ func Run(ctx context.Context, store storage.Store, observeLLM, learnLLM LLM, opt
 	}
 
 	// Diff: conversations without corresponding observations (or stale ones) are pending
-	var pending []storage.SessionEntry
+	var pending []storage.ConversationEntry
 	var pruned int
 	for _, e := range entries {
 		if observed, ok := observations[e.Key]; ok && !e.LastModified.After(observed) {
@@ -160,23 +160,23 @@ func Run(ctx context.Context, store storage.Store, observeLLM, learnLLM LLM, opt
 		sem := make(chan struct{}, 8)
 		for _, entry := range pending {
 			wg.Add(1)
-			go func(entry storage.SessionEntry) {
+			go func(entry storage.ConversationEntry) {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
 
-				session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
+				conv, err := store.GetConversation(ctx, entry.Source, entry.ConversationID)
 				if err != nil {
 					completed.Add(1)
 					mu.Lock()
 					if firstErr == nil {
-						firstErr = fmt.Errorf("load session %s: %w", entry.Key, err)
+						firstErr = fmt.Errorf("load conversation %s: %w", entry.Key, err)
 					}
 					mu.Unlock()
 					return
 				}
 				start := time.Now()
-				obs, usage, err := observeSession(ctx, observeLLM, session)
+				obs, usage, err := observeConversation(ctx, observeLLM, conv)
 				n := completed.Add(1)
 				if err != nil {
 					mu.Lock()
@@ -309,8 +309,8 @@ type turn struct {
 	humanContent     string // human's message
 }
 
-func observeSession(ctx context.Context, client LLM, session *conversation.Session) (string, inference.Usage, error) {
-	turns := extractTurns(session)
+func observeConversation(ctx context.Context, client LLM, conv *conversation.Conversation) (string, inference.Usage, error) {
+	turns := extractTurns(conv)
 	if len(turns) == 0 {
 		return "", inference.Usage{}, nil
 	}
@@ -421,13 +421,13 @@ func stripCodeFences(s string) string {
 // leaving headroom for the system prompt and output.
 const maxChunkChars = 200_000
 
-// extractTurns extracts human/assistant pairs from a session. Each turn pairs
+// extractTurns extracts human/assistant pairs from a conversation. Each turn pairs
 // the assistant message that preceded a human response with that human message.
-// Sessions with fewer than 2 human turns are skipped (no corrections or
+// Conversations with fewer than 2 human turns are skipped (no corrections or
 // preferences were expressed).
-func extractTurns(session *conversation.Session) []turn {
+func extractTurns(conv *conversation.Conversation) []turn {
 	var userTurns int
-	for _, msg := range session.Messages {
+	for _, msg := range conv.Messages {
 		if msg.Role == "user" && len(msg.Content) > 0 {
 			userTurns++
 		}
@@ -438,7 +438,7 @@ func extractTurns(session *conversation.Session) []turn {
 
 	var turns []turn
 	var lastAssistant string
-	for _, msg := range session.Messages {
+	for _, msg := range conv.Messages {
 		switch msg.Role {
 		case "assistant":
 			// Accumulate assistant content (may include tool call names)

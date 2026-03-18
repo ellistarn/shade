@@ -17,12 +17,12 @@ func TestSyncAll(t *testing.T) {
 	src := testutil.NewConversationStore()
 	dst := testutil.NewConversationStore()
 
-	// 2 sessions
-	src.AddSession("test", "sess-1", time.Now(), []conversation.Message{
+	// 2 conversations
+	src.AddConversation("test", "sess-1", time.Now(), []conversation.Message{
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", Content: "hi"},
 	})
-	src.AddSession("test", "sess-2", time.Now(), []conversation.Message{
+	src.AddConversation("test", "sess-2", time.Now(), []conversation.Message{
 		{Role: "user", Content: "bye"},
 		{Role: "assistant", Content: "see ya"},
 	})
@@ -39,13 +39,13 @@ func TestSyncAll(t *testing.T) {
 		t.Fatalf("Sync() error: %v", err)
 	}
 
-	// Verify sessions
-	sessions, err := dst.ListSessions(ctx)
+	// Verify conversations
+	conversations, err := dst.ListConversations(ctx)
 	if err != nil {
-		t.Fatalf("ListSessions() error: %v", err)
+		t.Fatalf("ListConversations() error: %v", err)
 	}
-	if len(sessions) != 2 {
-		t.Errorf("dst sessions = %d, want 2", len(sessions))
+	if len(conversations) != 2 {
+		t.Errorf("dst conversations = %d, want 2", len(conversations))
 	}
 
 	// Verify observations
@@ -84,7 +84,7 @@ func TestSyncSelectiveCategories(t *testing.T) {
 	dst := testutil.NewConversationStore()
 
 	// Populate all categories in src
-	src.AddSession("test", "sess-1", time.Now(), []conversation.Message{
+	src.AddConversation("test", "sess-1", time.Now(), []conversation.Message{
 		{Role: "user", Content: "hello"},
 	})
 	src.Observations["conversations/test/sess-1.json"] = "observation 1"
@@ -95,13 +95,13 @@ func TestSyncSelectiveCategories(t *testing.T) {
 		t.Fatalf("Sync() error: %v", err)
 	}
 
-	// Verify sessions synced
-	sessions, err := dst.ListSessions(ctx)
+	// Verify conversations synced
+	conversations, err := dst.ListConversations(ctx)
 	if err != nil {
-		t.Fatalf("ListSessions() error: %v", err)
+		t.Fatalf("ListConversations() error: %v", err)
 	}
-	if len(sessions) != 1 {
-		t.Errorf("dst sessions = %d, want 1", len(sessions))
+	if len(conversations) != 1 {
+		t.Errorf("dst conversations = %d, want 1", len(conversations))
 	}
 
 	// Verify observations NOT synced
@@ -120,7 +120,7 @@ func TestSyncIdempotent(t *testing.T) {
 	src := testutil.NewConversationStore()
 	dst := testutil.NewConversationStore()
 
-	src.AddSession("test", "sess-1", time.Now(), []conversation.Message{
+	src.AddConversation("test", "sess-1", time.Now(), []conversation.Message{
 		{Role: "user", Content: "hello"},
 	})
 	src.Observations["conversations/test/sess-1.json"] = "observation 1"
@@ -162,12 +162,12 @@ func TestSyncEmptySource(t *testing.T) {
 	}
 
 	// Verify dst is empty
-	sessions, err := dst.ListSessions(ctx)
+	conversations, err := dst.ListConversations(ctx)
 	if err != nil {
-		t.Fatalf("ListSessions() error: %v", err)
+		t.Fatalf("ListConversations() error: %v", err)
 	}
-	if len(sessions) != 0 {
-		t.Errorf("dst sessions = %d, want 0", len(sessions))
+	if len(conversations) != 0 {
+		t.Errorf("dst conversations = %d, want 0", len(conversations))
 	}
 	if len(dst.Observations) != 0 {
 		t.Errorf("dst observations = %d, want 0", len(dst.Observations))
@@ -195,14 +195,14 @@ func TestSyncPreservesExistingDstData(t *testing.T) {
 	dst := testutil.NewConversationStore()
 
 	// Pre-populate dst
-	dst.AddSession("existing", "dst-sess-1", time.Now(), []conversation.Message{
+	dst.AddConversation("existing", "dst-sess-1", time.Now(), []conversation.Message{
 		{Role: "user", Content: "existing message"},
 	})
 	dst.Observations["conversations/existing/dst-sess-1.json"] = "existing observation"
 	dst.Muses["2024-01-01T00:00:00Z"] = "# Existing Muse"
 
 	// Populate src with different data
-	src.AddSession("test", "src-sess-1", time.Now(), []conversation.Message{
+	src.AddConversation("test", "src-sess-1", time.Now(), []conversation.Message{
 		{Role: "user", Content: "new message"},
 	})
 	src.Observations["conversations/test/src-sess-1.json"] = "new observation"
@@ -213,13 +213,13 @@ func TestSyncPreservesExistingDstData(t *testing.T) {
 		t.Fatalf("Sync() error: %v", err)
 	}
 
-	// Verify dst has original session + synced session
-	sessions, err := dst.ListSessions(ctx)
+	// Verify dst has original conversation + synced conversation
+	conversations, err := dst.ListConversations(ctx)
 	if err != nil {
-		t.Fatalf("ListSessions() error: %v", err)
+		t.Fatalf("ListConversations() error: %v", err)
 	}
-	if len(sessions) != 2 {
-		t.Errorf("dst sessions = %d, want 2", len(sessions))
+	if len(conversations) != 2 {
+		t.Errorf("dst conversations = %d, want 2", len(conversations))
 	}
 
 	// Verify original dst data preserved

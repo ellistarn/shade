@@ -40,10 +40,10 @@ func NewLocalStoreWithRoot(root string) *LocalStore {
 // Root returns the filesystem root directory for this store.
 func (l *LocalStore) Root() string { return l.root }
 
-// ListSessions returns all session entries under conversations/.
-func (l *LocalStore) ListSessions(_ context.Context) ([]SessionEntry, error) {
+// ListConversations returns all conversation entries under conversations/.
+func (l *LocalStore) ListConversations(_ context.Context) ([]ConversationEntry, error) {
 	conversationsDir := filepath.Join(l.root, "conversations")
-	var entries []SessionEntry
+	var entries []ConversationEntry
 	err := filepath.WalkDir(conversationsDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -63,56 +63,56 @@ func (l *LocalStore) ListSessions(_ context.Context) ([]SessionEntry, error) {
 			return nil
 		}
 		src := parts[0]
-		sessionID := strings.TrimSuffix(parts[1], ".json")
+		conversationID := strings.TrimSuffix(parts[1], ".json")
 		info, err := d.Info()
 		if err != nil {
 			return nil
 		}
-		entries = append(entries, SessionEntry{
-			Source:       src,
-			SessionID:    sessionID,
-			Key:          "conversations/" + filepath.ToSlash(rel),
-			LastModified: info.ModTime(),
+		entries = append(entries, ConversationEntry{
+			Source:         src,
+			ConversationID: conversationID,
+			Key:            "conversations/" + filepath.ToSlash(rel),
+			LastModified:   info.ModTime(),
 		})
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list sessions: %w", err)
+		return nil, fmt.Errorf("failed to list conversations: %w", err)
 	}
 	return entries, nil
 }
 
-// PutSession writes a session as JSON and returns the number of bytes written.
-func (l *LocalStore) PutSession(_ context.Context, session *conversation.Session) (int, error) {
-	data, err := json.MarshalIndent(session, "", "  ")
+// PutConversation writes a conversation as JSON and returns the number of bytes written.
+func (l *LocalStore) PutConversation(_ context.Context, conv *conversation.Conversation) (int, error) {
+	data, err := json.MarshalIndent(conv, "", "  ")
 	if err != nil {
-		return 0, fmt.Errorf("failed to marshal session: %w", err)
+		return 0, fmt.Errorf("failed to marshal conversation: %w", err)
 	}
-	path := filepath.Join(l.root, "conversations", session.Source, session.SessionID+".json")
+	path := filepath.Join(l.root, "conversations", conv.Source, conv.ConversationID+".json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return 0, fmt.Errorf("failed to create directory: %w", err)
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return 0, fmt.Errorf("failed to write session: %w", err)
+		return 0, fmt.Errorf("failed to write conversation: %w", err)
 	}
 	return len(data), nil
 }
 
-// GetSession reads and deserializes a session from the filesystem.
-func (l *LocalStore) GetSession(_ context.Context, src, sessionID string) (*conversation.Session, error) {
-	path := filepath.Join(l.root, "conversations", src, sessionID+".json")
+// GetConversation reads and deserializes a conversation from the filesystem.
+func (l *LocalStore) GetConversation(_ context.Context, src, conversationID string) (*conversation.Conversation, error) {
+	path := filepath.Join(l.root, "conversations", src, conversationID+".json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, &NotFoundError{Key: sessionKey(src, sessionID)}
+			return nil, &NotFoundError{Key: conversationKey(src, conversationID)}
 		}
-		return nil, fmt.Errorf("failed to read session %s: %w", sessionID, err)
+		return nil, fmt.Errorf("failed to read conversation %s: %w", conversationID, err)
 	}
-	var session conversation.Session
-	if err := json.Unmarshal(data, &session); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal session %s: %w", sessionID, err)
+	var conv conversation.Conversation
+	if err := json.Unmarshal(data, &conv); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal conversation %s: %w", conversationID, err)
 	}
-	return &session, nil
+	return &conv, nil
 }
 
 // GetMuse returns the latest muse version by finding the most recent timestamp

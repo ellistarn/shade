@@ -14,17 +14,17 @@ import (
 	"github.com/ellistarn/muse/internal/testutil"
 )
 
-// twoSessionStore returns a store with two conversations, each with two
+// twoConversationStore returns a store with two conversations, each with two
 // human turns (the minimum for observation extraction).
-func twoSessionStore() *testutil.ConversationStore {
+func twoConversationStore() *testutil.ConversationStore {
 	store := testutil.NewConversationStore()
-	store.AddSession("claude-code", "sess-1", time.Now(), []conversation.Message{
+	store.AddConversation("claude-code", "sess-1", time.Now(), []conversation.Message{
 		{Role: "user", Content: "use kebab-case for file names"},
 		{Role: "assistant", Content: "OK, I'll rename them."},
 		{Role: "user", Content: "also use lowercase"},
 		{Role: "assistant", Content: "Done."},
 	})
-	store.AddSession("claude-code", "sess-2", time.Now(), []conversation.Message{
+	store.AddConversation("claude-code", "sess-2", time.Now(), []conversation.Message{
 		{Role: "user", Content: "never use emojis in commit messages"},
 		{Role: "assistant", Content: "Understood."},
 		{Role: "user", Content: "and keep them short"},
@@ -38,7 +38,7 @@ func twoSessionStore() *testutil.ConversationStore {
 // ---------------------------------------------------------------------------
 
 func TestMapReduce_EndToEnd(t *testing.T) {
-	store := twoSessionStore()
+	store := twoConversationStore()
 	llm := &testutil.MockLLM{
 		ObserveResponse: "- Prefers kebab-case file names\n- No emojis in commits",
 		LearnResponse:   "## Naming\n\nI use kebab-case for file names.\n\n## Commits\n\nNo emojis. Keep them short.",
@@ -61,7 +61,7 @@ func TestMapReduce_EndToEnd(t *testing.T) {
 	if !strings.Contains(store.Muse, "kebab-case") {
 		t.Error("muse missing expected content")
 	}
-	// 2 sessions * 2 observe steps (extract + refine) + 1 learn = 5 calls
+	// 2 conversations * 2 observe steps (extract + refine) + 1 learn = 5 calls
 	if len(llm.Calls) != 5 {
 		t.Errorf("LLM calls = %d, want 5", len(llm.Calls))
 	}
@@ -86,7 +86,7 @@ func TestMapReduce_NoConversations(t *testing.T) {
 func TestMapReduce_Limit(t *testing.T) {
 	store := testutil.NewConversationStore()
 	for i := 0; i < 5; i++ {
-		store.AddSession("test", fmt.Sprintf("sess-%d", i), time.Now(), []conversation.Message{
+		store.AddConversation("test", fmt.Sprintf("sess-%d", i), time.Now(), []conversation.Message{
 			{Role: "user", Content: fmt.Sprintf("message %d", i)},
 			{Role: "assistant", Content: "ok"},
 			{Role: "user", Content: "follow up"},
@@ -114,7 +114,7 @@ func TestMapReduce_Limit(t *testing.T) {
 func TestMapReduce_LimitIncludesPreviousObservations(t *testing.T) {
 	store := testutil.NewConversationStore()
 	for i := 0; i < 4; i++ {
-		store.AddSession("test", fmt.Sprintf("sess-%d", i), time.Now(), []conversation.Message{
+		store.AddConversation("test", fmt.Sprintf("sess-%d", i), time.Now(), []conversation.Message{
 			{Role: "user", Content: fmt.Sprintf("message %d", i)},
 			{Role: "assistant", Content: "ok"},
 			{Role: "user", Content: "follow up"},
@@ -164,7 +164,7 @@ func TestMapReduce_LimitIncludesPreviousObservations(t *testing.T) {
 
 func TestMapReduce_EmptyConversation(t *testing.T) {
 	store := testutil.NewConversationStore()
-	store.AddSession("test", "empty", time.Now(), []conversation.Message{
+	store.AddConversation("test", "empty", time.Now(), []conversation.Message{
 		{Role: "user", Content: ""},
 		{Role: "assistant", Content: ""},
 	})
@@ -181,15 +181,15 @@ func TestMapReduce_EmptyConversation(t *testing.T) {
 }
 
 func TestMapReduce_ObserveError(t *testing.T) {
-	store := twoSessionStore()
+	store := twoConversationStore()
 	llm := &contentFailLLM{
 		failOn:          "use spaces",
-		observeResponse: "- observation from good session",
+		observeResponse: "- observation from good conversation",
 		learnResponse:   "## Muse\n\nContent.",
 	}
 
-	// Inject a session that will trigger the LLM failure
-	store.AddSession("test", "bad", time.Now(), []conversation.Message{
+	// Inject a conversation that will trigger the LLM failure
+	store.AddConversation("test", "bad", time.Now(), []conversation.Message{
 		{Role: "user", Content: "use spaces"},
 		{Role: "assistant", Content: "ok"},
 		{Role: "user", Content: "always"},
@@ -204,7 +204,7 @@ func TestMapReduce_ObserveError(t *testing.T) {
 
 func TestMapReduce_Reobserve(t *testing.T) {
 	store := testutil.NewConversationStore()
-	store.AddSession("test", "sess-1", time.Now(), []conversation.Message{
+	store.AddConversation("test", "sess-1", time.Now(), []conversation.Message{
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", Content: "hi"},
 		{Role: "user", Content: "one more thing"},
@@ -234,7 +234,7 @@ func TestMapReduce_Reobserve(t *testing.T) {
 }
 
 func TestMapReduce_IncrementalPersist(t *testing.T) {
-	store := twoSessionStore()
+	store := twoConversationStore()
 	llm := &testutil.MockLLM{
 		ObserveResponse: "- observation",
 		LearnResponse:   "## Test\n\nContent.",
@@ -257,7 +257,7 @@ func TestMapReduce_IncrementalPersist(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestClustered_EndToEnd(t *testing.T) {
-	store := twoSessionStore()
+	store := twoConversationStore()
 	mock := &clusterMockLLM{}
 	root := t.TempDir()
 
@@ -300,7 +300,7 @@ func TestClustered_EndToEnd(t *testing.T) {
 
 func TestClustered_CacheHit(t *testing.T) {
 	store := testutil.NewConversationStore()
-	store.AddSession("test", "s1", time.Now(), []conversation.Message{
+	store.AddConversation("test", "s1", time.Now(), []conversation.Message{
 		{Role: "user", Content: "use tabs"},
 		{Role: "assistant", Content: "ok"},
 		{Role: "user", Content: "no emojis"},
@@ -352,7 +352,7 @@ func TestClustered_NoConversations(t *testing.T) {
 
 func TestClustered_ObserveError(t *testing.T) {
 	store := testutil.NewConversationStore()
-	store.AddSession("test", "bad", time.Now(), []conversation.Message{
+	store.AddConversation("test", "bad", time.Now(), []conversation.Message{
 		{Role: "user", Content: "trigger failure"},
 		{Role: "assistant", Content: "ok"},
 		{Role: "user", Content: "more input"},
@@ -375,7 +375,7 @@ func TestClustered_ObserveError(t *testing.T) {
 func TestClustered_Limit(t *testing.T) {
 	store := testutil.NewConversationStore()
 	for i := 0; i < 5; i++ {
-		store.AddSession("test", fmt.Sprintf("sess-%d", i), time.Now(), []conversation.Message{
+		store.AddConversation("test", fmt.Sprintf("sess-%d", i), time.Now(), []conversation.Message{
 			{Role: "user", Content: fmt.Sprintf("message %d", i)},
 			{Role: "assistant", Content: "ok"},
 			{Role: "user", Content: "follow up"},

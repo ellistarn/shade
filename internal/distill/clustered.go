@@ -99,15 +99,15 @@ func RunClustered(
 	// ── LABEL ──────────────────────────────────────────────────────────
 	var labelCounter atomic.Int32
 	labelStart := time.Now()
-	// Count sessions for progress total
-	labelSessions := map[string]bool{}
+	// Count conversations for progress total
+	labelConversations := map[string]bool{}
 	for _, obs := range allObs {
-		labelSessions[obs.Source+"/"+obs.SessionID] = true
+		labelConversations[obs.Source+"/"+obs.ConversationID] = true
 	}
-	labelTotal := len(labelSessions)
+	labelTotal := len(labelConversations)
 	labelBeforeNote := ""
 	if labelTotal > 0 {
-		labelBeforeNote = fmt.Sprintf(" (%d sessions)", labelTotal)
+		labelBeforeNote = fmt.Sprintf(" (%d conversations)", labelTotal)
 	}
 	logBefore("label", "%d observations%s", len(allObs), labelBeforeNote)
 	prog := startProgress(labelTotal, &labelCounter)
@@ -126,7 +126,7 @@ func RunClustered(
 	})
 	labelNote := ""
 	if labelCache.Hit > 0 {
-		labelNote = fmt.Sprintf(" [%d sessions cached]", labelCache.Hit)
+		labelNote = fmt.Sprintf(" [%d conversations cached]", labelCache.Hit)
 	}
 	logAfter("%d labels%s", numLabels, labelNote).cost(time.Since(labelStart), labelUsage).print()
 
@@ -310,9 +310,9 @@ func runObserve(
 	opts ClusteredOptions,
 	counter *atomic.Int32,
 ) (*observeResult, error) {
-	entries, err := store.ListSessions(ctx)
+	entries, err := store.ListConversations(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list sessions: %w", err)
+		return nil, fmt.Errorf("list conversations: %w", err)
 	}
 
 	// Handle reobserve
@@ -336,7 +336,7 @@ func runObserve(
 		for _, s := range opts.Sources {
 			allowed[s] = true
 		}
-		var filtered []storage.SessionEntry
+		var filtered []storage.ConversationEntry
 		for _, e := range entries {
 			if allowed[e.Source] {
 				filtered = append(filtered, e)
@@ -361,7 +361,7 @@ func runObserve(
 	promptHash := Fingerprint(prompts.Extract, prompts.Refine)
 
 	// Determine which conversations need (re)observation
-	var pending []storage.SessionEntry
+	var pending []storage.ConversationEntry
 	var pruned int
 	for _, e := range entries {
 		if err := ctx.Err(); err != nil {
@@ -369,7 +369,7 @@ func runObserve(
 		}
 		fp := Fingerprint(e.LastModified.Format(time.RFC3339Nano), promptHash)
 
-		existing, err := artifacts.GetObservations(e.Source, e.SessionID)
+		existing, err := artifacts.GetObservations(e.Source, e.ConversationID)
 		if err == nil && existing.Fingerprint == fp {
 			pruned++
 			continue
@@ -427,7 +427,7 @@ func runObserve(
 
 		for _, entry := range pending {
 			wg.Add(1)
-			go func(entry storage.SessionEntry) {
+			go func(entry storage.ConversationEntry) {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
@@ -438,22 +438,22 @@ func runObserve(
 					return
 				}
 
-				session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
+				conv, err := store.GetConversation(ctx, entry.Source, entry.ConversationID)
 				if err != nil {
 					counter.Add(1)
 					mu.Lock()
 					if firstErr == nil {
-						firstErr = fmt.Errorf("load session %s: %w", entry.Key, err)
+						firstErr = fmt.Errorf("load conversation %s: %w", entry.Key, err)
 						cancelOnErr()
 					}
 					mu.Unlock()
 					return
 				}
 
-				sessionBytes := sessionDataSize(session)
+				convBytes := conversationDataSize(conv)
 
 				start := time.Now()
-				items, u, err := extractObservations(ctx, llm, session, opts.Verbose)
+				items, u, err := extractObservations(ctx, llm, conv, opts.Verbose)
 				n := counter.Add(1)
 				if err != nil {
 					mu.Lock()
@@ -465,12 +465,12 @@ func runObserve(
 					return
 				}
 
-				fp := Fingerprint(session.UpdatedAt.Format(time.RFC3339Nano), promptHash)
+				fp := Fingerprint(conv.UpdatedAt.Format(time.RFC3339Nano), promptHash)
 				obs := &Observations{
 					Fingerprint: fp,
 					Items:       items,
 				}
-				if err := artifacts.PutObservations(entry.Source, entry.SessionID, obs); err != nil {
+				if err := artifacts.PutObservations(entry.Source, entry.ConversationID, obs); err != nil {
 					mu.Lock()
 					if firstErr == nil {
 						firstErr = fmt.Errorf("save observations for %s: %w", entry.Key, err)
@@ -487,7 +487,7 @@ func runObserve(
 				}
 				mu.Lock()
 				usage = usage.Add(u)
-				dataSize += sessionBytes
+				dataSize += convBytes
 				mu.Unlock()
 			}(entry)
 		}
@@ -511,24 +511,24 @@ func runObserve(
 	}, nil
 }
 
-// sessionDataSize returns the total byte size of all message content in a session.
-func sessionDataSize(session *conversation.Session) int {
+// conversationDataSize returns the total byte size of all message content in a conversation.
+func conversationDataSize(conv *conversation.Conversation) int {
 	n := 0
-	for _, msg := range session.Messages {
+	for _, msg := range conv.Messages {
 		n += len(msg.Content)
 	}
 	return n
 }
 
-// extractObservations runs the observe pipeline on a session and returns
+// extractObservations runs the observe pipeline on a conversation and returns
 // discrete observation strings (not a markdown blob).
 //
 // Raw conversation is sent to the extract prompt by default. When the raw text
 // exceeds the context window, mechanical compression is applied as a fallback:
 // code blocks are stripped, tool output is collapsed to [tool: name] markers,
 // and long assistant messages are truncated.
-func extractObservations(ctx context.Context, client LLM, session *conversation.Session, verbose bool) ([]string, inference.Usage, error) {
-	turns := extractTurns(session)
+func extractObservations(ctx context.Context, client LLM, conv *conversation.Conversation, verbose bool) ([]string, inference.Usage, error) {
+	turns := extractTurns(conv)
 	if len(turns) == 0 {
 		return nil, inference.Usage{}, nil
 	}
@@ -781,7 +781,7 @@ func parseObservationItems(text string) []string {
 	return items
 }
 
-// observationEntry flattens source/session/index into a single record
+// observationEntry flattens source/conversation/index into a single record
 // so downstream stages can track observations across conversations. removes a leading bullet or numbered-list marker from a line.
 // Handles "- ...", "• ...", "* ...", "1. ...", "12. ...", etc.
 func stripListPrefix(s string) string {
@@ -803,19 +803,19 @@ func stripListPrefix(s string) string {
 	return s
 }
 
-// observationEntry flattens source/session/index into a single record
+// observationEntry flattens source/conversation/index into a single record
 // so downstream stages can track observations across conversations.
 type observationEntry struct {
-	Source    string
-	SessionID string
-	Index     int
-	Text      string
+	Source         string
+	ConversationID string
+	Index          int
+	Text           string
 }
 
 // loadAllStructuredObservations loads all observation artifacts and returns
-// a flat list of observation entries, loading sessions in parallel.
+// a flat list of observation entries, loading conversations in parallel.
 func loadAllStructuredObservations(artifacts *ArtifactStore) ([]observationEntry, error) {
-	sessions, err := artifacts.ListObservations()
+	convList, err := artifacts.ListObservations()
 	if err != nil {
 		return nil, err
 	}
@@ -824,29 +824,29 @@ func loadAllStructuredObservations(artifacts *ArtifactStore) ([]observationEntry
 		entries []observationEntry
 		err     error
 	}
-	results := make([]result, len(sessions))
+	results := make([]result, len(convList))
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 20)
-	for i, ss := range sessions {
+	for i, ss := range convList {
 		wg.Add(1)
-		go func(i int, ss SourceSession) {
+		go func(i int, ss SourceConversation) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			obs, err := artifacts.GetObservations(ss.Source, ss.SessionID)
+			obs, err := artifacts.GetObservations(ss.Source, ss.ConversationID)
 			if err != nil {
-				results[i] = result{err: fmt.Errorf("get observations %s/%s: %w", ss.Source, ss.SessionID, err)}
+				results[i] = result{err: fmt.Errorf("get observations %s/%s: %w", ss.Source, ss.ConversationID, err)}
 				return
 			}
 			var entries []observationEntry
 			for j, item := range obs.Items {
 				entries = append(entries, observationEntry{
-					Source:    ss.Source,
-					SessionID: ss.SessionID,
-					Index:     j,
-					Text:      item,
+					Source:         ss.Source,
+					ConversationID: ss.ConversationID,
+					Index:          j,
+					Text:           item,
 				})
 			}
 			results[i] = result{entries: entries}
@@ -959,7 +959,7 @@ func parseLabelResponse(resp string, count int) []string {
 }
 
 // runLabel labels observations using batched LLM calls.
-// Sessions are processed in parallel with a shared label vocabulary.
+// Conversations are processed in parallel with a shared label vocabulary.
 // A normalization step downstream merges synonymous labels.
 func runLabel(
 	ctx context.Context,
@@ -983,9 +983,9 @@ func runLabel(
 		return inference.Usage{}, HitMiss{}, 0, fmt.Errorf("list labels: %w", err)
 	}
 	for _, ss := range existingLabels {
-		lbl, err := artifacts.GetLabels(ss.Source, ss.SessionID)
+		lbl, err := artifacts.GetLabels(ss.Source, ss.ConversationID)
 		if err != nil {
-			return inference.Usage{}, HitMiss{}, 0, fmt.Errorf("get labels %s/%s: %w", ss.Source, ss.SessionID, err)
+			return inference.Usage{}, HitMiss{}, 0, fmt.Errorf("get labels %s/%s: %w", ss.Source, ss.ConversationID, err)
 		}
 		for _, item := range lbl.Items {
 			if item.Label != "" {
@@ -994,11 +994,11 @@ func runLabel(
 		}
 	}
 
-	// Group observations by (source, sessionID)
-	type sessionKey struct{ source, sessionID string }
-	groups := map[sessionKey][]observationEntry{}
+	// Group observations by (source, conversationID)
+	type conversationKey struct{ source, conversationID string }
+	groups := map[conversationKey][]observationEntry{}
 	for _, obs := range allObs {
-		key := sessionKey{obs.Source, obs.SessionID}
+		key := conversationKey{obs.Source, obs.ConversationID}
 		groups[key] = append(groups[key], obs)
 	}
 
@@ -1016,7 +1016,7 @@ func runLabel(
 
 	for key, entries := range groups {
 		wg.Add(1)
-		go func(key sessionKey, entries []observationEntry) {
+		go func(key conversationKey, entries []observationEntry) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
@@ -1033,7 +1033,7 @@ func runLabel(
 			}
 			fp := Fingerprint(append(obsTexts, labelPromptHash)...)
 
-			existing, err := artifacts.GetLabels(key.source, key.sessionID)
+			existing, err := artifacts.GetLabels(key.source, key.conversationID)
 			if err == nil && existing.Fingerprint == fp {
 				hits.Add(1)
 				for _, item := range existing.Items {
@@ -1043,7 +1043,7 @@ func runLabel(
 				}
 				n := counter.Add(1)
 				if verbose {
-					fmt.Fprintf(os.Stderr, "  [%d/%d] Cached labels for %s/%s\n", n, total, key.source, key.sessionID)
+					fmt.Fprintf(os.Stderr, "  [%d/%d] Cached labels for %s/%s\n", n, total, key.source, key.conversationID)
 				}
 				return
 			}
@@ -1071,7 +1071,7 @@ func runLabel(
 				if err != nil {
 					mu.Lock()
 					if firstErr == nil {
-						firstErr = fmt.Errorf("label batch for %s/%s: %w", key.source, key.sessionID, err)
+						firstErr = fmt.Errorf("label batch for %s/%s: %w", key.source, key.conversationID, err)
 						cancelOnErr()
 					}
 					mu.Unlock()
@@ -1096,10 +1096,10 @@ func runLabel(
 				Fingerprint: fp,
 				Items:       items,
 			}
-			if err := artifacts.PutLabels(key.source, key.sessionID, lblResult); err != nil {
+			if err := artifacts.PutLabels(key.source, key.conversationID, lblResult); err != nil {
 				mu.Lock()
 				if firstErr == nil {
-					firstErr = fmt.Errorf("save labels for %s/%s: %w", key.source, key.sessionID, err)
+					firstErr = fmt.Errorf("save labels for %s/%s: %w", key.source, key.conversationID, err)
 					cancelOnErr()
 				}
 				mu.Unlock()
@@ -1109,7 +1109,7 @@ func runLabel(
 			n := counter.Add(1)
 			if verbose {
 				fmt.Fprintf(os.Stderr, "  [%d/%d] Labeled %s/%s (%d items, $%.4f)\n",
-					n, total, key.source, key.sessionID, len(items), usage.Cost())
+					n, total, key.source, key.conversationID, len(items), usage.Cost())
 			}
 
 			mu.Lock()
@@ -1138,16 +1138,16 @@ func runNormalize(
 	verbose bool,
 ) (inference.Usage, error) {
 	// Collect all unique labels
-	sessions, err := artifacts.ListLabels()
+	convList, err := artifacts.ListLabels()
 	if err != nil {
 		return inference.Usage{}, fmt.Errorf("list labels: %w", err)
 	}
 
 	uniqueLabels := map[string]bool{}
-	for _, ss := range sessions {
-		lbl, err := artifacts.GetLabels(ss.Source, ss.SessionID)
+	for _, ss := range convList {
+		lbl, err := artifacts.GetLabels(ss.Source, ss.ConversationID)
 		if err != nil {
-			return inference.Usage{}, fmt.Errorf("get labels %s/%s: %w", ss.Source, ss.SessionID, err)
+			return inference.Usage{}, fmt.Errorf("get labels %s/%s: %w", ss.Source, ss.ConversationID, err)
 		}
 		for _, item := range lbl.Items {
 			if item.Label != "" {
@@ -1174,7 +1174,7 @@ func runNormalize(
 	if err == nil && existing.Fingerprint == fp {
 		// Cache hit — still need to apply mapping to ensure consistency
 		if len(existing.Mapping) > 0 {
-			applyNormalization(artifacts, sessions, existing.Mapping)
+			applyNormalization(artifacts, convList, existing.Mapping)
 		}
 		return inference.Usage{}, nil
 	}
@@ -1213,7 +1213,7 @@ func runNormalize(
 
 	// Apply mapping to label artifacts
 	if len(mapping) > 0 {
-		applyNormalization(artifacts, sessions, mapping)
+		applyNormalization(artifacts, convList, mapping)
 	}
 
 	return usage, nil
@@ -1251,9 +1251,9 @@ func parseNormalizationResponse(resp string) map[string]string {
 }
 
 // applyNormalization rewrites label artifacts, replacing labels according to the mapping.
-func applyNormalization(artifacts *ArtifactStore, sessions []SourceSession, mapping map[string]string) {
-	for _, ss := range sessions {
-		lbl, err := artifacts.GetLabels(ss.Source, ss.SessionID)
+func applyNormalization(artifacts *ArtifactStore, convList []SourceConversation, mapping map[string]string) {
+	for _, ss := range convList {
+		lbl, err := artifacts.GetLabels(ss.Source, ss.ConversationID)
 		if err != nil {
 			continue
 		}
@@ -1265,7 +1265,7 @@ func applyNormalization(artifacts *ArtifactStore, sessions []SourceSession, mapp
 			}
 		}
 		if changed {
-			artifacts.PutLabels(ss.Source, ss.SessionID, lbl)
+			artifacts.PutLabels(ss.Source, ss.ConversationID, lbl)
 		}
 	}
 }
@@ -1281,25 +1281,25 @@ type clusterResult struct {
 // Labels with minClusterSize+ observations form clusters; the rest is noise.
 func runGroup(artifacts *ArtifactStore, allObs []observationEntry) ([]clusterResult, []string, error) {
 	// Load labels to get label for each observation
-	type sessionKey struct{ source, sessionID string }
-	lblBySession := map[sessionKey]*Labels{}
-	sessions, err := artifacts.ListLabels()
+	type conversationKey struct{ source, conversationID string }
+	lblByConversation := map[conversationKey]*Labels{}
+	convList, err := artifacts.ListLabels()
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, ss := range sessions {
-		lbl, err := artifacts.GetLabels(ss.Source, ss.SessionID)
+	for _, ss := range convList {
+		lbl, err := artifacts.GetLabels(ss.Source, ss.ConversationID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("get labels %s/%s: %w", ss.Source, ss.SessionID, err)
+			return nil, nil, fmt.Errorf("get labels %s/%s: %w", ss.Source, ss.ConversationID, err)
 		}
-		lblBySession[sessionKey{ss.Source, ss.SessionID}] = lbl
+		lblByConversation[conversationKey{ss.Source, ss.ConversationID}] = lbl
 	}
 
 	// Build observation → label mapping
 	obsLabels := make([]string, len(allObs))
 	for i, obs := range allObs {
-		key := sessionKey{obs.Source, obs.SessionID}
-		lbl, ok := lblBySession[key]
+		key := conversationKey{obs.Source, obs.ConversationID}
+		lbl, ok := lblByConversation[key]
 		if ok && obs.Index < len(lbl.Items) {
 			obsLabels[i] = strings.ToLower(strings.TrimSpace(lbl.Items[obs.Index].Label))
 			// Strip surrounding quotes from labels
@@ -1386,7 +1386,7 @@ func runSampleWithObs(clusters []clusterResult, allObs []observationEntry, artif
 		theme := ""
 		if len(indices) > 0 {
 			obs := allObs[indices[0]]
-			lbl, err := artifacts.GetLabels(obs.Source, obs.SessionID)
+			lbl, err := artifacts.GetLabels(obs.Source, obs.ConversationID)
 			if err == nil && obs.Index < len(lbl.Items) {
 				theme = lbl.Items[obs.Index].Label
 			}

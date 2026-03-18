@@ -29,7 +29,7 @@ func createOpenCodeDB(t *testing.T, path string) *sql.DB {
 	return db
 }
 
-func TestOpenCode_BasicSession(t *testing.T) {
+func TestOpenCode_BasicConversation(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "opencode.db")
 	db := createOpenCodeDB(t, dbPath)
@@ -59,15 +59,15 @@ func TestOpenCode_BasicSession(t *testing.T) {
 
 	t.Setenv("MUSE_OPENCODE_DB", dbPath)
 	oc := &OpenCode{}
-	sessions, err := oc.Sessions()
+	conversations, err := oc.Conversations()
 	if err != nil {
-		t.Fatalf("Sessions() error: %v", err)
+		t.Fatalf("Conversations() error: %v", err)
 	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(sessions))
+	if len(conversations) != 1 {
+		t.Fatalf("expected 1 conversation, got %d", len(conversations))
 	}
 
-	s := sessions[0]
+	s := conversations[0]
 
 	// Source.
 	if s.Source != "opencode" {
@@ -152,18 +152,18 @@ func TestOpenCode_ParentChildRelationship(t *testing.T) {
 
 	t.Setenv("MUSE_OPENCODE_DB", dbPath)
 	oc := &OpenCode{}
-	sessions, err := oc.Sessions()
+	conversations, err := oc.Conversations()
 	if err != nil {
-		t.Fatalf("Sessions() error: %v", err)
+		t.Fatalf("Conversations() error: %v", err)
 	}
-	if len(sessions) != 2 {
-		t.Fatalf("expected 2 sessions, got %d", len(sessions))
+	if len(conversations) != 2 {
+		t.Fatalf("expected 2 conversations, got %d", len(conversations))
 	}
 
 	// Build a map for easy lookup.
-	byID := map[string]Session{}
-	for _, s := range sessions {
-		byID[s.SessionID] = s
+	byID := map[string]Conversation{}
+	for _, s := range conversations {
+		byID[s.ConversationID] = s
 	}
 
 	parent := byID["parent-1"]
@@ -188,12 +188,12 @@ func TestOpenCode_EmptyDatabase(t *testing.T) {
 
 	t.Setenv("MUSE_OPENCODE_DB", dbPath)
 	oc := &OpenCode{}
-	sessions, err := oc.Sessions()
+	conversations, err := oc.Conversations()
 	if err != nil {
-		t.Fatalf("Sessions() error: %v", err)
+		t.Fatalf("Conversations() error: %v", err)
 	}
-	if len(sessions) != 0 {
-		t.Errorf("expected 0 sessions, got %d", len(sessions))
+	if len(conversations) != 0 {
+		t.Errorf("expected 0 conversations, got %d", len(conversations))
 	}
 }
 
@@ -203,12 +203,12 @@ func TestOpenCode_MissingDatabase(t *testing.T) {
 
 	t.Setenv("MUSE_OPENCODE_DB", dbPath)
 	oc := &OpenCode{}
-	sessions, err := oc.Sessions()
+	conversations, err := oc.Conversations()
 	if err != nil {
 		t.Fatalf("expected nil error for missing db, got: %v", err)
 	}
-	if sessions != nil {
-		t.Errorf("expected nil sessions, got %v", sessions)
+	if conversations != nil {
+		t.Errorf("expected nil conversations, got %v", conversations)
 	}
 }
 

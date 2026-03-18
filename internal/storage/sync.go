@@ -44,18 +44,18 @@ func Sync(ctx context.Context, src, dst Store, categories []string, w io.Writer)
 }
 
 func syncConversations(ctx context.Context, src, dst Store) (int, error) {
-	entries, err := src.ListSessions(ctx)
+	entries, err := src.ListConversations(ctx)
 	if err != nil {
 		return 0, err
 	}
 	var count int
 	for _, e := range entries {
-		session, err := src.GetSession(ctx, e.Source, e.SessionID)
+		conv, err := src.GetConversation(ctx, e.Source, e.ConversationID)
 		if err != nil {
-			return count, fmt.Errorf("get session %s: %w", e.Key, err)
+			return count, fmt.Errorf("get conversation %s: %w", e.Key, err)
 		}
-		if _, err := dst.PutSession(ctx, session); err != nil {
-			return count, fmt.Errorf("put session %s: %w", e.Key, err)
+		if _, err := dst.PutConversation(ctx, conv); err != nil {
+			return count, fmt.Errorf("put conversation %s: %w", e.Key, err)
 		}
 		count++
 	}

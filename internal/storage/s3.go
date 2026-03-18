@@ -39,9 +39,9 @@ func NewS3Store(ctx context.Context, bucket string) (*S3Store, error) {
 	}, nil
 }
 
-// ListSessions returns all session keys with their S3 LastModified timestamps.
-func (c *S3Store) ListSessions(ctx context.Context) ([]SessionEntry, error) {
-	var entries []SessionEntry
+// ListConversations returns all conversation keys with their S3 LastModified timestamps.
+func (c *S3Store) ListConversations(ctx context.Context) ([]ConversationEntry, error) {
+	var entries []ConversationEntry
 	paginator := s3.NewListObjectsV2Paginator(c.s3, &s3.ListObjectsV2Input{
 		Bucket: &c.bucket,
 		Prefix: aws.String("conversations/"),
@@ -53,28 +53,28 @@ func (c *S3Store) ListSessions(ctx context.Context) ([]SessionEntry, error) {
 		}
 		for _, obj := range page.Contents {
 			key := aws.ToString(obj.Key)
-			src, id := parseSessionKey(key)
+			src, id := parseConversationKey(key)
 			if src == "" {
 				continue
 			}
-			entries = append(entries, SessionEntry{
-				Source:       src,
-				SessionID:    id,
-				Key:          key,
-				LastModified: aws.ToTime(obj.LastModified),
+			entries = append(entries, ConversationEntry{
+				Source:         src,
+				ConversationID: id,
+				Key:            key,
+				LastModified:   aws.ToTime(obj.LastModified),
 			})
 		}
 	}
 	return entries, nil
 }
 
-// PutSession uploads a session as JSON and returns the number of bytes written.
-func (c *S3Store) PutSession(ctx context.Context, session *conversation.Session) (int, error) {
-	data, err := json.MarshalIndent(session, "", "  ")
+// PutConversation uploads a conversation as JSON and returns the number of bytes written.
+func (c *S3Store) PutConversation(ctx context.Context, conv *conversation.Conversation) (int, error) {
+	data, err := json.MarshalIndent(conv, "", "  ")
 	if err != nil {
-		return 0, fmt.Errorf("failed to marshal session: %w", err)
+		return 0, fmt.Errorf("failed to marshal conversation: %w", err)
 	}
-	key := sessionKey(session.Source, session.SessionID)
+	key := conversationKey(conv.Source, conv.ConversationID)
 	contentType := "application/json"
 	_, err = c.s3.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      &c.bucket,
@@ -83,14 +83,14 @@ func (c *S3Store) PutSession(ctx context.Context, session *conversation.Session)
 		ContentType: &contentType,
 	})
 	if err != nil {
-		return 0, fmt.Errorf("failed to upload session %s: %w", session.SessionID, err)
+		return 0, fmt.Errorf("failed to upload conversation %s: %w", conv.ConversationID, err)
 	}
 	return len(data), nil
 }
 
-// GetSession downloads and deserializes a session from S3.
-func (c *S3Store) GetSession(ctx context.Context, src, sessionID string) (*conversation.Session, error) {
-	key := sessionKey(src, sessionID)
+// GetConversation downloads and deserializes a conversation from S3.
+func (c *S3Store) GetConversation(ctx context.Context, src, conversationID string) (*conversation.Conversation, error) {
+	key := conversationKey(src, conversationID)
 	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &c.bucket,
 		Key:    &key,
@@ -101,13 +101,13 @@ func (c *S3Store) GetSession(ctx context.Context, src, sessionID string) (*conve
 	defer out.Body.Close()
 	data, err := io.ReadAll(out.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read session %s: %w", sessionID, err)
+		return nil, fmt.Errorf("failed to read conversation %s: %w", conversationID, err)
 	}
-	var session conversation.Session
-	if err := json.Unmarshal(data, &session); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal session %s: %w", sessionID, err)
+	var conv conversation.Conversation
+	if err := json.Unmarshal(data, &conv); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal conversation %s: %w", conversationID, err)
 	}
-	return &session, nil
+	return &conv, nil
 }
 
 // GetMuse returns the latest muse version by finding the most recent timestamp.
@@ -218,7 +218,7 @@ func (c *S3Store) GetMuseVersion(ctx context.Context, timestamp string) (string,
 	return string(data), nil
 }
 
-// PutObservation writes observations to S3 under observations/{source}/{session}.md.
+// PutObservation writes observations to S3 under observations/{source}/{conversation}.md.
 func (c *S3Store) PutObservation(ctx context.Context, key, content string) error {
 	path := observationKey(key)
 	contentType := "text/markdown"
@@ -306,23 +306,23 @@ func wrapS3NotFound(err error, key string) error {
 	return err
 }
 
-func sessionKey(src, sessionID string) string {
-	return fmt.Sprintf("conversations/%s/%s.json", src, sessionID)
+func conversationKey(src, conversationID string) string {
+	return fmt.Sprintf("conversations/%s/%s.json", src, conversationID)
 }
 
-// parseSessionKey extracts source and session ID from a key like "conversations/opencode/ses_abc.json".
-func parseSessionKey(key string) (src, sessionID string) {
+// parseConversationKey extracts source and conversation ID from a key like "conversations/opencode/ses_abc.json".
+func parseConversationKey(key string) (src, conversationID string) {
 	key = strings.TrimPrefix(key, "conversations/")
 	parts := strings.SplitN(key, "/", 2)
 	if len(parts) != 2 {
 		return "", ""
 	}
 	src = parts[0]
-	sessionID = strings.TrimSuffix(parts[1], ".json")
-	if src == "" || sessionID == "" {
+	conversationID = strings.TrimSuffix(parts[1], ".json")
+	if src == "" || conversationID == "" {
 		return "", ""
 	}
-	return src, sessionID
+	return src, conversationID
 }
 
 func museVersionKey(timestamp string) string {

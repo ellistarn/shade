@@ -13,12 +13,12 @@ import (
 
 const defaultOpenCodeDB = ".local/share/opencode/opencode.db"
 
-// OpenCode reads sessions from the OpenCode SQLite database.
+// OpenCode reads conversations from the OpenCode SQLite database.
 type OpenCode struct{}
 
 func (o *OpenCode) Name() string { return "OpenCode" }
 
-func (o *OpenCode) Sessions() ([]Session, error) {
+func (o *OpenCode) Conversations() ([]Conversation, error) {
 	dbPath := os.Getenv("MUSE_OPENCODE_DB")
 	if dbPath == "" {
 		home, err := os.UserHomeDir()
@@ -28,17 +28,17 @@ func (o *OpenCode) Sessions() ([]Session, error) {
 		dbPath = filepath.Join(home, defaultOpenCodeDB)
 	}
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		return nil, nil // no database, no sessions
+		return nil, nil // no database, no conversations
 	}
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open OpenCode database: %w", err)
 	}
 	defer db.Close()
-	return queryOpenCodeSessions(db)
+	return queryOpenCodeConversations(db)
 }
 
-func queryOpenCodeSessions(db *sql.DB) ([]Session, error) {
+func queryOpenCodeConversations(db *sql.DB) ([]Conversation, error) {
 	rows, err := db.Query(`
 		SELECT s.id, s.title, s.parent_id, s.time_created, s.time_updated, p.worktree
 		FROM session s
@@ -46,28 +46,28 @@ func queryOpenCodeSessions(db *sql.DB) ([]Session, error) {
 		ORDER BY s.time_updated DESC
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query sessions: %w", err)
+		return nil, fmt.Errorf("failed to query conversations: %w", err)
 	}
 	defer rows.Close()
 
-	// Build sessions and track parent-child relationships.
-	var sessions []Session
+	// Build conversations and track parent-child relationships.
+	var conversations []Conversation
 	children := map[string][]string{} // parent_id -> []child_id
 	for rows.Next() {
 		var id, title, worktree string
 		var parentID sql.NullString
 		var created, updated int64
 		if err := rows.Scan(&id, &title, &parentID, &created, &updated, &worktree); err != nil {
-			return nil, fmt.Errorf("failed to scan session row: %w", err)
+			return nil, fmt.Errorf("failed to scan conversation row: %w", err)
 		}
-		s := Session{
-			SchemaVersion: 1,
-			Source:        "opencode",
-			SessionID:     id,
-			Title:         title,
-			Project:       worktree,
-			CreatedAt:     time.UnixMilli(created),
-			UpdatedAt:     time.UnixMilli(updated),
+		s := Conversation{
+			SchemaVersion:  1,
+			Source:         "opencode",
+			ConversationID: id,
+			Title:          title,
+			Project:        worktree,
+			CreatedAt:      time.UnixMilli(created),
+			UpdatedAt:      time.UnixMilli(updated),
 		}
 		if parentID.Valid {
 			s.ParentID = parentID.String
@@ -75,27 +75,27 @@ func queryOpenCodeSessions(db *sql.DB) ([]Session, error) {
 		}
 		messages, err := queryOpenCodeMessages(db, id)
 		if err != nil {
-			return nil, fmt.Errorf("failed to query messages for session %s: %w", id, err)
+			return nil, fmt.Errorf("failed to query messages for conversation %s: %w", id, err)
 		}
 		s.Messages = messages
-		sessions = append(sessions, s)
+		conversations = append(conversations, s)
 	}
-	// Wire up subagent IDs on parent sessions.
-	for i := range sessions {
-		if ids, ok := children[sessions[i].SessionID]; ok {
-			sessions[i].SubagentIDs = ids
+	// Wire up subagent IDs on parent conversations.
+	for i := range conversations {
+		if ids, ok := children[conversations[i].ConversationID]; ok {
+			conversations[i].SubagentIDs = ids
 		}
 	}
-	return sessions, nil
+	return conversations, nil
 }
 
-func queryOpenCodeMessages(db *sql.DB, sessionID string) ([]Message, error) {
+func queryOpenCodeMessages(db *sql.DB, conversationID string) ([]Message, error) {
 	rows, err := db.Query(`
 		SELECT m.id, m.data, m.time_created
 		FROM message m
 		WHERE m.session_id = ?
 		ORDER BY m.time_created ASC
-	`, sessionID)
+	`, conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query messages: %w", err)
 	}

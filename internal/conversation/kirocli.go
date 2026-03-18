@@ -12,12 +12,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// KiroCLI reads sessions from the kiro-cli SQLite database.
+// KiroCLI reads conversations from the kiro-cli SQLite database.
 type KiroCLI struct{}
 
 func (k *KiroCLI) Name() string { return "Kiro CLI" }
 
-func (k *KiroCLI) Sessions() ([]Session, error) {
+func (k *KiroCLI) Conversations() ([]Conversation, error) {
 	dbPath := os.Getenv("MUSE_KIRO_CLI_DB")
 	if dbPath == "" {
 		p, err := defaultKiroCLIDB()
@@ -34,7 +34,7 @@ func (k *KiroCLI) Sessions() ([]Session, error) {
 		return nil, fmt.Errorf("failed to open kiro-cli database: %w", err)
 	}
 	defer db.Close()
-	return queryKiroCLISessions(db)
+	return queryKiroCLIConversations(db)
 }
 
 func defaultKiroCLIDB() (string, error) {
@@ -56,7 +56,7 @@ func defaultKiroCLIDB() (string, error) {
 	return filepath.Join(home, ".local", "share", "kiro-cli", "data.sqlite3"), nil
 }
 
-func queryKiroCLISessions(db *sql.DB) ([]Session, error) {
+func queryKiroCLIConversations(db *sql.DB) ([]Conversation, error) {
 	rows, err := db.Query(`
 		SELECT key, conversation_id, value, created_at, updated_at
 		FROM conversations_v2
@@ -67,7 +67,7 @@ func queryKiroCLISessions(db *sql.DB) ([]Session, error) {
 	}
 	defer rows.Close()
 
-	var sessions []Session
+	var conversations []Conversation
 	var parseErrs int
 	for rows.Next() {
 		var project, convID, value string
@@ -83,15 +83,15 @@ func queryKiroCLISessions(db *sql.DB) ([]Session, error) {
 		if s == nil {
 			continue
 		}
-		sessions = append(sessions, *s)
+		conversations = append(conversations, *s)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate conversations: %w", err)
 	}
-	if parseErrs > 0 && len(sessions) == 0 {
+	if parseErrs > 0 && len(conversations) == 0 {
 		return nil, fmt.Errorf("all %d conversations failed to parse", parseErrs)
 	}
-	return sessions, nil
+	return conversations, nil
 }
 
 // kiroCLIConversation is the JSON structure stored in conversations_v2.value.
@@ -131,19 +131,19 @@ type kiroCLIToolUseRef struct {
 	OrigArgs json.RawMessage `json:"orig_args"`
 }
 
-func parseKiroCLIConversation(project, convID, value string, createdMs, updatedMs int64) (*Session, error) {
+func parseKiroCLIConversation(project, convID, value string, createdMs, updatedMs int64) (*Conversation, error) {
 	var conv kiroCLIConversation
 	if err := json.Unmarshal([]byte(value), &conv); err != nil {
 		return nil, err
 	}
 
-	s := &Session{
-		SchemaVersion: 1,
-		Source:        "kiro-cli",
-		SessionID:     convID,
-		Project:       project,
-		CreatedAt:     time.UnixMilli(createdMs),
-		UpdatedAt:     time.UnixMilli(updatedMs),
+	s := &Conversation{
+		SchemaVersion:  1,
+		Source:         "kiro-cli",
+		ConversationID: convID,
+		Project:        project,
+		CreatedAt:      time.UnixMilli(createdMs),
+		UpdatedAt:      time.UnixMilli(updatedMs),
 	}
 
 	for _, turn := range conv.History {

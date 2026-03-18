@@ -27,60 +27,60 @@ var (
 
 // ConversationStore is an in-memory implementation of storage.Store for tests.
 type ConversationStore struct {
-	Sessions     []storage.SessionEntry
-	Data         map[string]*conversation.Session
-	Muse         string
-	Observations map[string]string
-	Deleted      []string
-	Muses        map[string]string // timestamp -> content
-	mu           sync.Mutex
+	Conversations []storage.ConversationEntry
+	Data          map[string]*conversation.Conversation
+	Muse          string
+	Observations  map[string]string
+	Deleted       []string
+	Muses         map[string]string // timestamp -> content
+	mu            sync.Mutex
 }
 
 // NewConversationStore returns a ready-to-use ConversationStore.
 func NewConversationStore() *ConversationStore {
 	return &ConversationStore{
-		Data:         map[string]*conversation.Session{},
+		Data:         map[string]*conversation.Conversation{},
 		Observations: map[string]string{},
 		Muses:        map[string]string{},
 	}
 }
 
-// AddSession is a helper that registers a session in the store.
-func (s *ConversationStore) AddSession(src, id string, modified time.Time, messages []conversation.Message) {
+// AddConversation is a helper that registers a conversation in the store.
+func (s *ConversationStore) AddConversation(src, id string, modified time.Time, messages []conversation.Message) {
 	key := fmt.Sprintf("conversations/%s/%s.json", src, id)
-	s.Sessions = append(s.Sessions, storage.SessionEntry{
-		Source:       src,
-		SessionID:    id,
-		Key:          key,
-		LastModified: modified,
+	s.Conversations = append(s.Conversations, storage.ConversationEntry{
+		Source:         src,
+		ConversationID: id,
+		Key:            key,
+		LastModified:   modified,
 	})
-	s.Data[src+"/"+id] = &conversation.Session{
-		Source:    src,
-		SessionID: id,
-		Messages:  messages,
+	s.Data[src+"/"+id] = &conversation.Conversation{
+		Source:         src,
+		ConversationID: id,
+		Messages:       messages,
 	}
 }
 
-func (s *ConversationStore) ListSessions(_ context.Context) ([]storage.SessionEntry, error) {
-	return s.Sessions, nil
+func (s *ConversationStore) ListConversations(_ context.Context) ([]storage.ConversationEntry, error) {
+	return s.Conversations, nil
 }
 
-func (s *ConversationStore) GetSession(_ context.Context, src, sessionID string) (*conversation.Session, error) {
-	sess, ok := s.Data[src+"/"+sessionID]
+func (s *ConversationStore) GetConversation(_ context.Context, src, conversationID string) (*conversation.Conversation, error) {
+	conv, ok := s.Data[src+"/"+conversationID]
 	if !ok {
-		return nil, &storage.NotFoundError{Key: fmt.Sprintf("conversations/%s/%s.json", src, sessionID)}
+		return nil, &storage.NotFoundError{Key: fmt.Sprintf("conversations/%s/%s.json", src, conversationID)}
 	}
-	return sess, nil
+	return conv, nil
 }
 
-func (s *ConversationStore) PutSession(_ context.Context, session *conversation.Session) (int, error) {
-	key := fmt.Sprintf("conversations/%s/%s.json", session.Source, session.SessionID)
-	s.Data[session.Source+"/"+session.SessionID] = session
-	s.Sessions = append(s.Sessions, storage.SessionEntry{
-		Source:       session.Source,
-		SessionID:    session.SessionID,
-		Key:          key,
-		LastModified: time.Now(),
+func (s *ConversationStore) PutConversation(_ context.Context, conv *conversation.Conversation) (int, error) {
+	key := fmt.Sprintf("conversations/%s/%s.json", conv.Source, conv.ConversationID)
+	s.Data[conv.Source+"/"+conv.ConversationID] = conv
+	s.Conversations = append(s.Conversations, storage.ConversationEntry{
+		Source:         conv.Source,
+		ConversationID: conv.ConversationID,
+		Key:            key,
+		LastModified:   time.Now(),
 	})
 	return 0, nil
 }

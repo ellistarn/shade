@@ -12,12 +12,12 @@ import (
 
 const defaultClaudeDir = ".claude"
 
-// ClaudeCode reads sessions from Claude Code's JSONL files.
+// ClaudeCode reads conversations from Claude Code's JSONL files.
 type ClaudeCode struct{}
 
 func (c *ClaudeCode) Name() string { return "Claude Code" }
 
-func (c *ClaudeCode) Sessions() ([]Session, error) {
+func (c *ClaudeCode) Conversations() ([]Conversation, error) {
 	claudeDir := os.Getenv("MUSE_CLAUDE_DIR")
 	if claudeDir == "" {
 		home, err := os.UserHomeDir()
@@ -36,7 +36,7 @@ func (c *ClaudeCode) Sessions() ([]Session, error) {
 		return nil, nil // no projects directory
 	}
 
-	var sessions []Session
+	var conversations []Conversation
 	for _, pd := range projectDirs {
 		if !pd.IsDir() {
 			continue
@@ -51,14 +51,14 @@ func (c *ClaudeCode) Sessions() ([]Session, error) {
 			if !strings.HasSuffix(name, ".jsonl") {
 				continue
 			}
-			sessionID := strings.TrimSuffix(name, ".jsonl")
-			sessionPath := filepath.Join(projectPath, name)
-			session, err := parseClaudeSession(sessionPath, sessionID, titles)
-			if err != nil || session == nil {
+			conversationID := strings.TrimSuffix(name, ".jsonl")
+			conversationPath := filepath.Join(projectPath, name)
+			conv, err := parseClaudeConversation(conversationPath, conversationID, titles)
+			if err != nil || conv == nil {
 				continue
 			}
 			// Look for subagent files.
-			subagentDir := filepath.Join(projectPath, sessionID, "subagents")
+			subagentDir := filepath.Join(projectPath, conversationID, "subagents")
 			if subEntries, err := os.ReadDir(subagentDir); err == nil {
 				for _, se := range subEntries {
 					if !strings.HasSuffix(se.Name(), ".jsonl") {
@@ -66,19 +66,19 @@ func (c *ClaudeCode) Sessions() ([]Session, error) {
 					}
 					agentID := strings.TrimSuffix(se.Name(), ".jsonl")
 					subPath := filepath.Join(subagentDir, se.Name())
-					sub, err := parseClaudeSession(subPath, agentID, titles)
+					sub, err := parseClaudeConversation(subPath, agentID, titles)
 					if err != nil || sub == nil {
 						continue
 					}
-					sub.ParentID = session.SessionID
-					session.SubagentIDs = append(session.SubagentIDs, agentID)
-					sessions = append(sessions, *sub)
+					sub.ParentID = conv.ConversationID
+					conv.SubagentIDs = append(conv.SubagentIDs, agentID)
+					conversations = append(conversations, *sub)
 				}
 			}
-			sessions = append(sessions, *session)
+			conversations = append(conversations, *conv)
 		}
 	}
-	return sessions, nil
+	return conversations, nil
 }
 
 type claudeHistoryEntry struct {
@@ -86,7 +86,7 @@ type claudeHistoryEntry struct {
 	SessionID string `json:"sessionId"`
 }
 
-// loadClaudeHistory builds a map of sessionID -> first user prompt for titles.
+// loadClaudeHistory builds a map of conversationID -> first user prompt for titles.
 func loadClaudeHistory(path string) map[string]string {
 	titles := map[string]string{}
 	f, err := os.Open(path)
@@ -101,7 +101,7 @@ func loadClaudeHistory(path string) map[string]string {
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
 			continue
 		}
-		// Keep the first entry per session as the title.
+		// Keep the first entry per conversation as the title.
 		if _, exists := titles[entry.SessionID]; !exists && entry.Display != "" {
 			titles[entry.SessionID] = truncate(entry.Display, 100)
 		}
@@ -135,17 +135,17 @@ type claudeContentBlock struct {
 	ID    string          `json:"id"`
 }
 
-func parseClaudeSession(path, sessionID string, titles map[string]string) (*Session, error) {
+func parseClaudeConversation(path, conversationID string, titles map[string]string) (*Conversation, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	session := &Session{
-		SchemaVersion: 1,
-		Source:        "claude-code",
-		SessionID:     sessionID,
+	conv := &Conversation{
+		SchemaVersion:  1,
+		Source:         "claude-code",
+		ConversationID: conversationID,
 	}
 
 	var firstTime, lastTime time.Time
@@ -168,8 +168,8 @@ func parseClaudeSession(path, sessionID string, titles map[string]string) (*Sess
 			}
 		}
 		// Extract project from cwd.
-		if session.Project == "" && event.CWD != "" {
-			session.Project = event.CWD
+		if conv.Project == "" && event.CWD != "" {
+			conv.Project = event.CWD
 		}
 		if event.Type != "user" && event.Type != "assistant" {
 			continue
@@ -199,20 +199,20 @@ func parseClaudeSession(path, sessionID string, titles map[string]string) (*Sess
 		if msg.Content == "" && len(msg.ToolCalls) == 0 {
 			continue
 		}
-		session.Messages = append(session.Messages, msg)
+		conv.Messages = append(conv.Messages, msg)
 	}
 
-	if len(session.Messages) == 0 {
+	if len(conv.Messages) == 0 {
 		return nil, nil
 	}
-	session.CreatedAt = firstTime
-	session.UpdatedAt = lastTime
-	if title, ok := titles[sessionID]; ok {
-		session.Title = title
-	} else if len(session.Messages) > 0 {
-		session.Title = truncate(session.Messages[0].Content, 100)
+	conv.CreatedAt = firstTime
+	conv.UpdatedAt = lastTime
+	if title, ok := titles[conversationID]; ok {
+		conv.Title = title
+	} else if len(conv.Messages) > 0 {
+		conv.Title = truncate(conv.Messages[0].Content, 100)
 	}
-	return session, nil
+	return conv, nil
 }
 
 func parseClaudeContent(raw json.RawMessage) (string, []ToolCall) {

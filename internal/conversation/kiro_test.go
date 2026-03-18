@@ -12,12 +12,12 @@ func TestKiro_ChatFileContent(t *testing.T) {
 	t.Setenv("MUSE_KIRO_DIR", kiroTestDir)
 
 	k := &Kiro{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	s := findKiroSession(t, sessions, "sess-1")
+	s := findKiroConversation(t, conversations, "sess-1")
 
 	if s.Source != "kiro" {
 		t.Errorf("Source = %q, want %q", s.Source, "kiro")
@@ -61,12 +61,12 @@ func TestKiro_ChatFileModel(t *testing.T) {
 	t.Setenv("MUSE_KIRO_DIR", kiroTestDir)
 
 	k := &Kiro{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	s := findKiroSession(t, sessions, "sess-1")
+	s := findKiroConversation(t, conversations, "sess-1")
 
 	// Model should be populated from .chat metadata on assistant messages.
 	for i, msg := range s.Messages {
@@ -83,12 +83,12 @@ func TestKiro_ChatFileFiltering(t *testing.T) {
 	t.Setenv("MUSE_KIRO_DIR", kiroTestDir)
 
 	k := &Kiro{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	s := findKiroSession(t, sessions, "sess-1")
+	s := findKiroConversation(t, conversations, "sess-1")
 
 	for i, msg := range s.Messages {
 		if msg.Content == "I will follow these instructions." {
@@ -110,15 +110,15 @@ func TestKiro_FallbackToSessionJSON(t *testing.T) {
 	t.Setenv("MUSE_KIRO_DIR", kiroTestDir)
 
 	k := &Kiro{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	s := findKiroSession(t, sessions, "sess-fallback")
+	s := findKiroConversation(t, conversations, "sess-fallback")
 
-	// Fallback session has no matching .chat files (exec-orphan-1, exec-orphan-2),
-	// so it should fall back to session JSON content ("On it." for assistant).
+	// Fallback conversation has no matching .chat files (exec-orphan-1, exec-orphan-2),
+	// so it should fall back to conversation JSON content ("On it." for assistant).
 	if len(s.Messages) != 4 {
 		t.Fatalf("expected 4 messages, got %d", len(s.Messages))
 	}
@@ -127,18 +127,18 @@ func TestKiro_FallbackToSessionJSON(t *testing.T) {
 	}
 }
 
-func TestKiro_EmptySessionSkipped(t *testing.T) {
+func TestKiro_EmptyConversationSkipped(t *testing.T) {
 	t.Setenv("MUSE_KIRO_DIR", kiroTestDir)
 
 	k := &Kiro{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	for _, s := range sessions {
-		if s.SessionID == "sess-empty" {
-			t.Error("sess-empty should not be in returned sessions")
+	for _, s := range conversations {
+		if s.ConversationID == "sess-empty" {
+			t.Error("sess-empty should not be in returned conversations")
 		}
 	}
 }
@@ -147,25 +147,25 @@ func TestKiro_MissingDirectory(t *testing.T) {
 	t.Setenv("MUSE_KIRO_DIR", filepath.Join(t.TempDir(), "nonexistent"))
 
 	k := &Kiro{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
 		t.Fatalf("expected nil error for missing directory, got: %v", err)
 	}
-	if sessions != nil {
-		t.Errorf("expected nil sessions for missing directory, got %d", len(sessions))
+	if conversations != nil {
+		t.Errorf("expected nil conversations for missing directory, got %d", len(conversations))
 	}
 }
 
-func TestKiro_SessionMetadata(t *testing.T) {
+func TestKiro_ConversationMetadata(t *testing.T) {
 	t.Setenv("MUSE_KIRO_DIR", kiroTestDir)
 
 	k := &Kiro{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	s := findKiroSession(t, sessions, "sess-1")
+	s := findKiroConversation(t, conversations, "sess-1")
 
 	want := time.UnixMilli(1705312800000)
 	if !s.CreatedAt.Equal(want) {
@@ -216,14 +216,14 @@ func TestKiro_StripEnvironmentContext(t *testing.T) {
 	}
 }
 
-func findKiroSession(t *testing.T, sessions []Session, id string) *Session {
+func findKiroConversation(t *testing.T, conversations []Conversation, id string) *Conversation {
 	t.Helper()
-	for i := range sessions {
-		if sessions[i].SessionID == id {
-			return &sessions[i]
+	for i := range conversations {
+		if conversations[i].ConversationID == id {
+			return &conversations[i]
 		}
 	}
-	t.Fatalf("session %q not found", id)
+	t.Fatalf("conversation %q not found", id)
 	return nil
 }
 

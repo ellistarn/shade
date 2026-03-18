@@ -43,7 +43,7 @@ func mustExecKiroCLI(t *testing.T, db *sql.DB, query string, args ...any) {
 	}
 }
 
-func TestKiroCLI_BasicSession(t *testing.T) {
+func TestKiroCLI_BasicConversation(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "data.sqlite3")
 	db := createKiroCLIDB(t, dbPath)
@@ -66,20 +66,20 @@ func TestKiroCLI_BasicSession(t *testing.T) {
 
 	t.Setenv("MUSE_KIRO_CLI_DB", dbPath)
 	k := &KiroCLI{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
-		t.Fatalf("Sessions() error: %v", err)
+		t.Fatalf("Conversations() error: %v", err)
 	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(sessions))
+	if len(conversations) != 1 {
+		t.Fatalf("expected 1 conversation, got %d", len(conversations))
 	}
 
-	s := sessions[0]
+	s := conversations[0]
 	if s.Source != "kiro-cli" {
 		t.Errorf("Source = %q, want %q", s.Source, "kiro-cli")
 	}
-	if s.SessionID != "sess-1" {
-		t.Errorf("SessionID = %q, want %q", s.SessionID, "sess-1")
+	if s.ConversationID != "sess-1" {
+		t.Errorf("ConversationID = %q, want %q", s.ConversationID, "sess-1")
 	}
 	if s.Project != "/home/user/myapp" {
 		t.Errorf("Project = %q, want %q", s.Project, "/home/user/myapp")
@@ -118,7 +118,7 @@ func TestKiroCLI_ToolUseSession(t *testing.T) {
 					Content:   json.RawMessage(`{"Prompt":{"prompt":"list files"}}`),
 					Timestamp: "2026-01-15T10:00:00Z",
 				},
-				Asst: json.RawMessage(`{"ToolUse":{"message_id":"m1","content":"Let me check.","tool_uses":[{"id":"tu1","name":"execute_bash","orig_name":"execute_bash","args":{},"orig_args":{"command":"ls"}}]}}`),
+				Asst:     json.RawMessage(`{"ToolUse":{"message_id":"m1","content":"Let me check.","tool_uses":[{"id":"tu1","name":"execute_bash","orig_name":"execute_bash","args":{},"orig_args":{"command":"ls"}}]}}`),
 				Metadata: kiroCLIMeta{ModelID: "claude-opus-4.6"},
 			},
 			{
@@ -137,15 +137,15 @@ func TestKiroCLI_ToolUseSession(t *testing.T) {
 
 	t.Setenv("MUSE_KIRO_CLI_DB", dbPath)
 	k := &KiroCLI{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
-		t.Fatalf("Sessions() error: %v", err)
+		t.Fatalf("Conversations() error: %v", err)
 	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(sessions))
+	if len(conversations) != 1 {
+		t.Fatalf("expected 1 conversation, got %d", len(conversations))
 	}
 
-	s := sessions[0]
+	s := conversations[0]
 	// Expect: user prompt, assistant tool use, assistant response.
 	// ToolUseResults turn produces no user message.
 	if len(s.Messages) != 3 {
@@ -189,24 +189,24 @@ func TestKiroCLI_EmptyConversationSkipped(t *testing.T) {
 
 	t.Setenv("MUSE_KIRO_CLI_DB", dbPath)
 	k := &KiroCLI{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
-		t.Fatalf("Sessions() error: %v", err)
+		t.Fatalf("Conversations() error: %v", err)
 	}
-	if len(sessions) != 0 {
-		t.Errorf("expected 0 sessions, got %d", len(sessions))
+	if len(conversations) != 0 {
+		t.Errorf("expected 0 conversations, got %d", len(conversations))
 	}
 }
 
 func TestKiroCLI_MissingDatabase(t *testing.T) {
 	t.Setenv("MUSE_KIRO_CLI_DB", filepath.Join(t.TempDir(), "nonexistent.db"))
 	k := &KiroCLI{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
-	if sessions != nil {
-		t.Errorf("expected nil sessions, got %d", len(sessions))
+	if conversations != nil {
+		t.Errorf("expected nil conversations, got %d", len(conversations))
 	}
 }
 
@@ -218,11 +218,11 @@ func TestKiroCLI_EmptyDatabase(t *testing.T) {
 
 	t.Setenv("MUSE_KIRO_CLI_DB", dbPath)
 	k := &KiroCLI{}
-	sessions, err := k.Sessions()
+	conversations, err := k.Conversations()
 	if err != nil {
-		t.Fatalf("Sessions() error: %v", err)
+		t.Fatalf("Conversations() error: %v", err)
 	}
-	if len(sessions) != 0 {
-		t.Errorf("expected 0 sessions, got %d", len(sessions))
+	if len(conversations) != 0 {
+		t.Errorf("expected 0 conversations, got %d", len(conversations))
 	}
 }

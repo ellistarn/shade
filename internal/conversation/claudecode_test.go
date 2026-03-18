@@ -6,36 +6,36 @@ import (
 	"time"
 )
 
-// helper to find a session by ID in the returned slice.
-func findSession(sessions []Session, id string) *Session {
-	for i := range sessions {
-		if sessions[i].SessionID == id {
-			return &sessions[i]
+// helper to find a conversation by ID in the returned slice.
+func findConversation(conversations []Conversation, id string) *Conversation {
+	for i := range conversations {
+		if conversations[i].ConversationID == id {
+			return &conversations[i]
 		}
 	}
 	return nil
 }
 
-func mustSessions(t *testing.T) []Session {
+func mustConversations(t *testing.T) []Conversation {
 	t.Helper()
 	t.Setenv("MUSE_CLAUDE_DIR", "testdata/claude")
 	cc := &ClaudeCode{}
-	sessions, err := cc.Sessions()
+	conversations, err := cc.Conversations()
 	if err != nil {
-		t.Fatalf("Sessions() returned error: %v", err)
+		t.Fatalf("Conversations() returned error: %v", err)
 	}
-	if sessions == nil {
-		t.Fatal("Sessions() returned nil")
+	if conversations == nil {
+		t.Fatal("Conversations() returned nil")
 	}
-	return sessions
+	return conversations
 }
 
 func TestClaudeCode_BasicSession(t *testing.T) {
-	sessions := mustSessions(t)
+	conversations := mustConversations(t)
 
-	s := findSession(sessions, "basic-session")
+	s := findConversation(conversations, "basic-session")
 	if s == nil {
-		t.Fatal("basic-session not found in returned sessions")
+		t.Fatal("basic-session not found in returned conversations")
 	}
 
 	// Source
@@ -68,11 +68,11 @@ func TestClaudeCode_BasicSession(t *testing.T) {
 }
 
 func TestClaudeCode_ToolHeavySession(t *testing.T) {
-	sessions := mustSessions(t)
+	conversations := mustConversations(t)
 
-	s := findSession(sessions, "tool-heavy-session")
+	s := findConversation(conversations, "tool-heavy-session")
 	if s == nil {
-		t.Fatal("tool-heavy-session not found in returned sessions")
+		t.Fatal("tool-heavy-session not found in returned conversations")
 	}
 
 	// Should have 4 messages: user, assistant (tool_use), user, assistant
@@ -119,11 +119,11 @@ func TestClaudeCode_ToolHeavySession(t *testing.T) {
 }
 
 func TestClaudeCode_StreamingPartialsSkipped(t *testing.T) {
-	sessions := mustSessions(t)
+	conversations := mustConversations(t)
 
-	s := findSession(sessions, "streaming-partials")
+	s := findConversation(conversations, "streaming-partials")
 	if s == nil {
-		t.Fatal("streaming-partials not found in returned sessions")
+		t.Fatal("streaming-partials not found in returned conversations")
 	}
 
 	// Partial should be skipped: user, assistant, user, assistant = 4 messages
@@ -154,37 +154,37 @@ func TestClaudeCode_StreamingPartialsSkipped(t *testing.T) {
 }
 
 func TestClaudeCode_EmptySessionSkipped(t *testing.T) {
-	sessions := mustSessions(t)
+	conversations := mustConversations(t)
 
-	s := findSession(sessions, "empty-session")
+	s := findConversation(conversations, "empty-session")
 	if s != nil {
-		t.Errorf("empty-session should not appear in results, but found session with %d messages", len(s.Messages))
+		t.Errorf("empty-session should not appear in results, but found conversation with %d messages", len(s.Messages))
 	}
 }
 
 func TestClaudeCode_MissingDirectory(t *testing.T) {
 	t.Setenv("MUSE_CLAUDE_DIR", "testdata/nonexistent-path")
 	cc := &ClaudeCode{}
-	sessions, err := cc.Sessions()
+	conversations, err := cc.Conversations()
 	if err != nil {
-		t.Fatalf("Sessions() returned error for missing dir: %v", err)
+		t.Fatalf("Conversations() returned error for missing dir: %v", err)
 	}
-	if sessions != nil {
-		t.Errorf("Sessions() = %v, want nil for missing directory", sessions)
+	if conversations != nil {
+		t.Errorf("Conversations() = %v, want nil for missing directory", conversations)
 	}
 }
 
 func TestClaudeCode_SessionMetadata(t *testing.T) {
-	sessions := mustSessions(t)
+	conversations := mustConversations(t)
 
-	s := findSession(sessions, "basic-session")
+	s := findConversation(conversations, "basic-session")
 	if s == nil {
 		t.Fatal("basic-session not found")
 	}
 
-	// SessionID
-	if s.SessionID != "basic-session" {
-		t.Errorf("SessionID = %q, want %q", s.SessionID, "basic-session")
+	// ConversationID
+	if s.ConversationID != "basic-session" {
+		t.Errorf("ConversationID = %q, want %q", s.ConversationID, "basic-session")
 	}
 
 	// Project comes from the cwd field

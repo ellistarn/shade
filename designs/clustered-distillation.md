@@ -59,7 +59,7 @@ invalidates.
 
 Fingerprints per layer:
 
-- **Observation**: `hash(session.LastModified, observePromptHash)`
+- **Observation**: `hash(conversation.LastModified, observePromptHash)`
 - **Label**: `hash(observationContent, labelPromptHash)`
 - **Normalization**: `hash(sorted unique labels, normalizePromptHash)`
 
@@ -76,10 +76,10 @@ distillation system, nested under `distill/`.
 
 ```
 ~/.muse/
-├── conversations/{source}/{session_id}.json              # input, syncable
+├── conversations/{source}/{conversation_id}.json              # input, syncable
 ├── distill/
-│   ├── observations/{source}/{session_id}.json           # syncable
-│   ├── labels/{source}/{session_id}.json                 # syncable
+│   ├── observations/{source}/{conversation_id}.json           # syncable
+│   ├── labels/{source}/{conversation_id}.json                 # syncable
 │   ├── normalization.json                                # label mapping, ephemeral
 │   └── clusters/{id}.json                                # ephemeral, not synced, overwritten each run
 ├── muse/versions/{timestamp}/muse.md                     # output, syncable
@@ -90,10 +90,10 @@ Observations are a JSON array of discrete strings per conversation — each obse
 label. Labels are stored one file per conversation containing all per-observation entries:
 
 ```json
-// distill/observations/{source}/{session_id}.json
+// distill/observations/{source}/{conversation_id}.json
 {"fingerprint": "abc123", "items": ["obs1", "obs2", "obs3"]}
 
-// distill/labels/{source}/{session_id}.json
+// distill/labels/{source}/{conversation_id}.json
 {"fingerprint": "def456", "items": [
   {"observation": "obs1", "label": "root cause over symptom fixing"},
   {"observation": "obs2", "label": "abstraction must earn its cost"}

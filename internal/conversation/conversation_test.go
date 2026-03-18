@@ -10,20 +10,20 @@ import (
 
 // mockProvider is a test Provider with configurable behavior.
 type mockProvider struct {
-	name     string
-	sessions []Session
-	err      error
-	delay    time.Duration
-	called   atomic.Bool
+	name          string
+	conversations []Conversation
+	err           error
+	delay         time.Duration
+	called        atomic.Bool
 }
 
 func (m *mockProvider) Name() string { return m.name }
-func (m *mockProvider) Sessions() ([]Session, error) {
+func (m *mockProvider) Conversations() ([]Conversation, error) {
 	m.called.Store(true)
 	if m.delay > 0 {
 		time.Sleep(m.delay)
 	}
-	return m.sessions, m.err
+	return m.conversations, m.err
 }
 
 func TestProviders_ReturnsAllDefaults(t *testing.T) {
@@ -47,13 +47,13 @@ func TestProviders_ImplementInterface(t *testing.T) {
 	// returns gracefully when data doesn't exist on this machine.
 	for _, p := range Providers() {
 		t.Run(p.Name(), func(t *testing.T) {
-			sessions, err := p.Sessions()
-			// Either returns sessions or nil — should not error when
+			conversations, err := p.Conversations()
+			// Either returns conversations or nil — should not error when
 			// the source simply doesn't exist on this machine.
 			if err != nil {
 				t.Logf("warning: %s returned error (may be expected in CI): %v", p.Name(), err)
 			}
-			t.Logf("%s: %d sessions", p.Name(), len(sessions))
+			t.Logf("%s: %d conversations", p.Name(), len(conversations))
 		})
 	}
 }
@@ -65,33 +65,33 @@ func TestParallelProviderLoading(t *testing.T) {
 		&mockProvider{
 			name:  "slow-a",
 			delay: 100 * time.Millisecond,
-			sessions: []Session{
-				{Source: "slow-a", SessionID: "1"},
-				{Source: "slow-a", SessionID: "2"},
+			conversations: []Conversation{
+				{Source: "slow-a", ConversationID: "1"},
+				{Source: "slow-a", ConversationID: "2"},
 			},
 		},
 		&mockProvider{
 			name:  "slow-b",
 			delay: 100 * time.Millisecond,
-			sessions: []Session{
-				{Source: "slow-b", SessionID: "3"},
+			conversations: []Conversation{
+				{Source: "slow-b", ConversationID: "3"},
 			},
 		},
 		&mockProvider{
 			name:  "slow-c",
 			delay: 100 * time.Millisecond,
-			sessions: []Session{
-				{Source: "slow-c", SessionID: "4"},
-				{Source: "slow-c", SessionID: "5"},
-				{Source: "slow-c", SessionID: "6"},
+			conversations: []Conversation{
+				{Source: "slow-c", ConversationID: "4"},
+				{Source: "slow-c", ConversationID: "5"},
+				{Source: "slow-c", ConversationID: "6"},
 			},
 		},
 	}
 
 	type result struct {
-		name     string
-		sessions []Session
-		err      error
+		name          string
+		conversations []Conversation
+		err           error
 	}
 
 	start := time.Now()
@@ -101,8 +101,8 @@ func TestParallelProviderLoading(t *testing.T) {
 		wg.Add(1)
 		go func(i int, p Provider) {
 			defer wg.Done()
-			sessions, err := p.Sessions()
-			results[i] = result{name: p.Name(), sessions: sessions, err: err}
+			conversations, err := p.Conversations()
+			results[i] = result{name: p.Name(), conversations: conversations, err: err}
 		}(i, p)
 	}
 	wg.Wait()
@@ -114,7 +114,7 @@ func TestParallelProviderLoading(t *testing.T) {
 	}
 
 	// Verify all providers were called and results are correct.
-	totalSessions := 0
+	totalConversations := 0
 	for i, r := range results {
 		if r.err != nil {
 			t.Errorf("provider %d (%s) returned error: %v", i, r.name, r.err)
@@ -122,10 +122,10 @@ func TestParallelProviderLoading(t *testing.T) {
 		if !providers[i].(*mockProvider).called.Load() {
 			t.Errorf("provider %d (%s) was never called", i, r.name)
 		}
-		totalSessions += len(r.sessions)
+		totalConversations += len(r.conversations)
 	}
-	if totalSessions != 6 {
-		t.Errorf("expected 6 total sessions, got %d", totalSessions)
+	if totalConversations != 6 {
+		t.Errorf("expected 6 total conversations, got %d", totalConversations)
 	}
 
 	// Verify order is preserved (results[i] matches providers[i]).
@@ -137,23 +137,23 @@ func TestParallelProviderLoading(t *testing.T) {
 func TestParallelProviderLoading_ErrorHandling(t *testing.T) {
 	providers := []Provider{
 		&mockProvider{
-			name:     "good",
-			sessions: []Session{{Source: "good", SessionID: "1"}},
+			name:          "good",
+			conversations: []Conversation{{Source: "good", ConversationID: "1"}},
 		},
 		&mockProvider{
 			name: "bad",
 			err:  fmt.Errorf("disk on fire"),
 		},
 		&mockProvider{
-			name:     "also-good",
-			sessions: []Session{{Source: "also-good", SessionID: "2"}},
+			name:          "also-good",
+			conversations: []Conversation{{Source: "also-good", ConversationID: "2"}},
 		},
 	}
 
 	type result struct {
-		name     string
-		sessions []Session
-		err      error
+		name          string
+		conversations []Conversation
+		err           error
 	}
 	results := make([]result, len(providers))
 	var wg sync.WaitGroup
@@ -161,8 +161,8 @@ func TestParallelProviderLoading_ErrorHandling(t *testing.T) {
 		wg.Add(1)
 		go func(i int, p Provider) {
 			defer wg.Done()
-			sessions, err := p.Sessions()
-			results[i] = result{name: p.Name(), sessions: sessions, err: err}
+			conversations, err := p.Conversations()
+			results[i] = result{name: p.Name(), conversations: conversations, err: err}
 		}(i, p)
 	}
 	wg.Wait()
@@ -178,14 +178,14 @@ func TestParallelProviderLoading_ErrorHandling(t *testing.T) {
 		t.Errorf("also-good provider errored: %v", results[2].err)
 	}
 
-	// Collect sessions from non-errored providers.
-	var sessions []Session
+	// Collect conversations from non-errored providers.
+	var conversations []Conversation
 	for _, r := range results {
 		if r.err == nil {
-			sessions = append(sessions, r.sessions...)
+			conversations = append(conversations, r.conversations...)
 		}
 	}
-	if len(sessions) != 2 {
-		t.Errorf("expected 2 sessions from good providers, got %d", len(sessions))
+	if len(conversations) != 2 {
+		t.Errorf("expected 2 conversations from good providers, got %d", len(conversations))
 	}
 }

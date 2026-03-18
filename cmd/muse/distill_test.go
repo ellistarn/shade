@@ -56,7 +56,7 @@ func TestRunDistill_PropagatesLearnError(t *testing.T) {
 
 func TestRunDistill_SuccessfulRun(t *testing.T) {
 	store := testutil.NewConversationStore()
-	store.AddSession("test", "sess-1", time.Now(), []conversation.Message{
+	store.AddConversation("test", "sess-1", time.Now(), []conversation.Message{
 		{Role: "user", Content: "use tabs"},
 		{Role: "assistant", Content: "ok"},
 		{Role: "user", Content: "also no emojis"},
@@ -104,13 +104,13 @@ func TestRunDistill_SuccessfulLearn(t *testing.T) {
 // failingStore implements storage.Store where all operations return an error.
 type failingStore struct{ err error }
 
-func (s *failingStore) ListSessions(_ context.Context) ([]storage.SessionEntry, error) {
+func (s *failingStore) ListConversations(_ context.Context) ([]storage.ConversationEntry, error) {
 	return nil, s.err
 }
-func (s *failingStore) GetSession(_ context.Context, _, _ string) (*conversation.Session, error) {
+func (s *failingStore) GetConversation(_ context.Context, _, _ string) (*conversation.Conversation, error) {
 	return nil, s.err
 }
-func (s *failingStore) PutSession(_ context.Context, _ *conversation.Session) (int, error) {
+func (s *failingStore) PutConversation(_ context.Context, _ *conversation.Conversation) (int, error) {
 	return 0, s.err
 }
 func (s *failingStore) GetMuse(_ context.Context) (string, error)    { return "", s.err }

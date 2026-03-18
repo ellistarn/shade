@@ -72,7 +72,7 @@ func TestMCP_AskReturnsResponse(t *testing.T) {
 	}
 }
 
-func TestMCP_SessionContinuity(t *testing.T) {
+func TestMCP_ConversationContinuity(t *testing.T) {
 	c := newMCPClient(t, "Be concise.",
 		textResponse("First answer."),
 		textResponse("Follow-up answer with context."),
@@ -84,7 +84,7 @@ func TestMCP_SessionContinuity(t *testing.T) {
 		t.Fatalf("turn 1 error: %v", r1.Content)
 	}
 
-	// Second call should reuse the session (MCP server maintains sessionID)
+	// Second call should reuse the Bedrock session (MCP server maintains sessionID)
 	r2 := callAsk(t, c, "follow up")
 	if r2.IsError {
 		t.Fatalf("turn 2 error: %v", r2.Content)

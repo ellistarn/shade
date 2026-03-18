@@ -48,7 +48,7 @@ func TestIsRelevant(t *testing.T) {
 
 		// Parenthesized meta-commentary — should NOT be relevant
 		{"parens no obs", "(No candidate observations were provided in the input)", false},
-		{"parens understood", "(Understood — session cleared, no observations to filter.)", false},
+		{"parens understood", "(Understood — conversation cleared, no observations to filter.)", false},
 		{"parens empty response", "(empty response — no observations survive filtering)", false},
 		{"parens nothing passes", "(no observations pass the filter)", false},
 	}

@@ -79,8 +79,8 @@ func TestArtifactStoreObservations(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("expected 1 observation, got %d", len(list))
 	}
-	if list[0].Source != "opencode" || list[0].SessionID != "ses_001" {
-		t.Errorf("unexpected source/session: %+v", list[0])
+	if list[0].Source != "opencode" || list[0].ConversationID != "ses_001" {
+		t.Errorf("unexpected source/conversation: %+v", list[0])
 	}
 }
 

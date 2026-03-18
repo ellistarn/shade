@@ -13,12 +13,12 @@ import (
 )
 
 // NewServer creates an MCP server with an ask tool.
-// Each MCP client connection gets its own conversation session so concurrent
+// Each MCP client connection gets its own Bedrock session so concurrent
 // clients never share state.
 func NewServer(m *muse.Muse) *server.MCPServer {
 	srv := server.NewMCPServer("muse", "0.1.0", server.WithToolCapabilities(false))
 
-	// Map from MCP client session ID → muse conversation session ID.
+	// Map from MCP client session ID → muse Bedrock session ID.
 	var mu sync.Mutex
 	museSessionByClient := make(map[string]string)
 
@@ -33,7 +33,7 @@ func NewServer(m *muse.Muse) *server.MCPServer {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			// Resolve the MCP-level client session to a muse conversation session.
+			// Resolve the MCP-level client session to a muse Bedrock session.
 			clientID := ""
 			if cs := server.ClientSessionFromContext(ctx); cs != nil {
 				clientID = cs.SessionID()

@@ -13,15 +13,15 @@ import (
 //
 // Storage layout:
 //
-//	conversations/{source}/{session_id}.json   — raw conversation sessions
-//	observations/{source}/{session_id}.md      — per-session observations
+//	conversations/{source}/{conversation_id}.json   — raw conversations
+//	observations/{source}/{conversation_id}.md      — per-conversation observations
 //	muse/versions/{timestamp}/muse.md          — timestamped muse versions (latest = current)
 //	muse/versions/{timestamp}/diff.md          — what changed from the previous version
 type Store interface {
 	// Conversations
-	ListSessions(ctx context.Context) ([]SessionEntry, error)
-	GetSession(ctx context.Context, src, sessionID string) (*conversation.Session, error)
-	PutSession(ctx context.Context, session *conversation.Session) (int, error)
+	ListConversations(ctx context.Context) ([]ConversationEntry, error)
+	GetConversation(ctx context.Context, src, conversationID string) (*conversation.Conversation, error)
+	PutConversation(ctx context.Context, conv *conversation.Conversation) (int, error)
 
 	// Muses
 	GetMuse(ctx context.Context) (string, error)                          // latest version
@@ -40,12 +40,12 @@ type Store interface {
 	DeletePrefix(ctx context.Context, prefix string) error
 }
 
-// SessionEntry is the metadata returned by ListSessions without downloading full content.
-type SessionEntry struct {
-	Source       string
-	SessionID    string
-	Key          string
-	LastModified time.Time
+// ConversationEntry is the metadata returned by ListConversations without downloading full content.
+type ConversationEntry struct {
+	Source         string
+	ConversationID string
+	Key            string
+	LastModified   time.Time
 }
 
 // NotFoundError is returned when a requested resource does not exist.

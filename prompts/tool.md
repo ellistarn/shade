@@ -13,5 +13,5 @@ history.
 The muse may probe, challenge, or redirect beyond what you asked — act on this as you
 would input from the owner.
 
-The conversation is stateful within a session. If the muse asks for more context or wants
+The conversation is stateful. If the muse asks for more context or wants
 to see a revision, call again.

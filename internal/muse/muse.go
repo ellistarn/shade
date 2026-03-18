@@ -136,22 +136,22 @@ func (m *Muse) Ask(ctx context.Context, input AskInput) (*AskResult, error) {
 	}, nil
 }
 
-// Upload scans local sources, diffs against storage, and uploads changed sessions.
+// Upload scans local sources, diffs against storage, and uploads changed conversations.
 // If sources are specified, only those providers are scanned.
 func (m *Muse) Upload(ctx context.Context, sources ...string) (*UploadResult, error) {
-	existing, err := m.storage.ListSessions(ctx)
+	existing, err := m.storage.ListConversations(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list remote sessions: %w", err)
+		return nil, fmt.Errorf("failed to list remote conversations: %w", err)
 	}
-	remote := map[string]storage.SessionEntry{}
+	remote := map[string]storage.ConversationEntry{}
 	for _, e := range existing {
 		remote[e.Key] = e
 	}
 
 	type result struct {
-		name     string
-		sessions []conversation.Session
-		err      error
+		name          string
+		conversations []conversation.Conversation
+		err           error
 	}
 	providers := conversation.Providers()
 	results := make([]result, len(providers))
@@ -160,20 +160,20 @@ func (m *Muse) Upload(ctx context.Context, sources ...string) (*UploadResult, er
 		wg.Add(1)
 		go func(i int, p conversation.Provider) {
 			defer wg.Done()
-			sessions, err := p.Sessions()
-			results[i] = result{name: p.Name(), sessions: sessions, err: err}
+			convs, err := p.Conversations()
+			results[i] = result{name: p.Name(), conversations: convs, err: err}
 		}(i, provider)
 	}
 	wg.Wait()
 
-	var local []conversation.Session
+	var local []conversation.Conversation
 	var warnings []string
 	for _, r := range results {
 		if r.err != nil {
-			warnings = append(warnings, fmt.Sprintf("failed to read %s sessions: %v", r.name, r.err))
+			warnings = append(warnings, fmt.Sprintf("failed to read %s conversations: %v", r.name, r.err))
 			continue
 		}
-		local = append(local, r.sessions...)
+		local = append(local, r.conversations...)
 	}
 
 	// Filter by source if specified.
@@ -182,7 +182,7 @@ func (m *Muse) Upload(ctx context.Context, sources ...string) (*UploadResult, er
 		for _, s := range sources {
 			allowed[s] = true
 		}
-		var filtered []conversation.Session
+		var filtered []conversation.Conversation
 		for _, sess := range local {
 			if allowed[sess.Source] {
 				filtered = append(filtered, sess)
@@ -201,16 +201,16 @@ func (m *Muse) Upload(ctx context.Context, sources ...string) (*UploadResult, er
 	uploadCounts := map[string]int{}
 	for i := range local {
 		sess := &local[i]
-		key := fmt.Sprintf("conversations/%s/%s.json", sess.Source, sess.SessionID)
+		key := fmt.Sprintf("conversations/%s/%s.json", sess.Source, sess.ConversationID)
 		if entry, exists := remote[key]; exists {
 			if !sess.UpdatedAt.After(entry.LastModified) {
 				skipped++
 				continue
 			}
 		}
-		n, err := m.storage.PutSession(ctx, sess)
+		n, err := m.storage.PutConversation(ctx, sess)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("failed to upload %s: %v", sess.SessionID, err))
+			warnings = append(warnings, fmt.Sprintf("failed to upload %s: %v", sess.ConversationID, err))
 			continue
 		}
 		uploaded++
