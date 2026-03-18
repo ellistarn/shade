@@ -786,9 +786,7 @@ func parseObservationItems(text string) []string {
 		line = strings.TrimSpace(line)
 		// Strip optional bullet/number prefix before checking for Observation:
 		// Handles "- Observation: ...", "1. Observation: ...", "• Observation: ..."
-		cleaned := line
-		cleaned = strings.TrimLeft(cleaned, "- •*0123456789.")
-		cleaned = strings.TrimSpace(cleaned)
+		cleaned := stripListPrefix(line)
 
 		if strings.HasPrefix(cleaned, observationPrefix) {
 			obs := strings.TrimSpace(cleaned[len(observationPrefix):])
@@ -798,6 +796,29 @@ func parseObservationItems(text string) []string {
 		}
 	}
 	return items
+}
+
+// observationEntry flattens source/session/index into a single record
+
+// stripListPrefix removes a leading bullet or numbered-list marker from a line.
+// Handles "- ...", "• ...", "* ...", "1. ...", "12. ...", etc.
+func stripListPrefix(s string) string {
+	// Bullet markers: "- ", "• ", "* "
+	for _, prefix := range []string{"- ", "• ", "* "} {
+		if strings.HasPrefix(s, prefix) {
+			return strings.TrimSpace(s[len(prefix):])
+		}
+	}
+	// Numbered list: "N. " where N is one or more digits
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i > 0 && i < len(s) && s[i] == '.' {
+		rest := s[i+1:]
+		return strings.TrimSpace(rest)
+	}
+	return s
 }
 
 // observationEntry flattens source/session/index into a single record

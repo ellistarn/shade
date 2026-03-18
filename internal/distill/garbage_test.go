@@ -109,6 +109,21 @@ func TestParseObservationItems(t *testing.T) {
 			input: "Observation: A real observation.\n(empty)\nObservation: Another real one.\nI don't see any more.",
 			want:  []string{"A real observation.", "Another real one."},
 		},
+		{
+			name:  "double dash prefix preserved",
+			input: "-- Observation: Should not lose content.",
+			want:  nil, // "-- " is not a valid list prefix
+		},
+		{
+			name:  "asterisk bullet",
+			input: "* Observation: Bullet with asterisk.",
+			want:  []string{"Bullet with asterisk."},
+		},
+		{
+			name:  "multi-digit numbered prefix",
+			input: "12. Observation: Twelfth item.",
+			want:  []string{"Twelfth item."},
+		},
 	}
 
 	for _, tt := range tests {
