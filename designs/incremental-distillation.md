@@ -16,12 +16,9 @@ this person is, what does this new evidence change?"
 muse(n+1) = update(muse(n), new_observations)
 ```
 
-Each update folds new observations into the existing muse. Reinforced patterns persist. Patterns
-that stop appearing fade. This is analogous to EWMA: recent observations have direct influence,
-older observations are represented only through their cumulative effect on the muse.
-
-Forgetting is a feature. A muse that remembers everything equally is a database, not a model of
-how someone thinks. The muse should reflect who someone is now, weighted toward the recent past.
+Each update folds new observations into the existing muse. The muse is sticky — things persist
+unless the new evidence gives reason to change them. This is editing a document, not updating a
+moving average.
 
 ## Design
 
@@ -51,19 +48,33 @@ observations, never the full history.
 The natural batch is a sync: a few new conversations producing ~10-15 observations. One observation
 at a time works but costs an Opus call per observation. Batching amortizes cost.
 
-### Forgetting and the forgotten log
+### How the update works
+
+The muse is ground truth. The update only changes what new evidence gives reason to change:
+
+- **Add** new patterns not yet in the muse.
+- **Strengthen** patterns the new evidence reinforces (higher confidence, more specificity).
+- **Weaken or remove** patterns the new evidence contradicts.
+- **Leave everything else alone.** Absence of evidence is not evidence of absence. A pattern
+  observed once and never contradicted persists indefinitely.
+
+Forgetting comes from contradiction or subsumption, not from time passing. "I used to prefer tabs,
+now I use spaces" is a reason to forget. Six months of silence about tabs is not.
+
+### The forgotten log
 
 Each update produces two outputs:
 
 1. **muse.md** — the updated muse
-2. **forgotten.md** — what was removed or softened, with a reason for each
+2. **forgotten.md** — what was removed or softened, with a reason
+
+Every entry in the forgotten log has a cause: "contradicted by X" or "subsumed by Y." If the log
+ever says "hasn't been mentioned recently," the update prompt is wrong.
 
 The forgotten log provides:
 
 - **Audit.** Why did the muse stop mentioning X?
 - **Recovery.** Feed a dropped observation back in to restore it.
-- **Self-calibration.** If the same pattern keeps getting forgotten and re-observed, the update
-  is too aggressive.
 
 ### Storage
 
@@ -81,18 +92,16 @@ Uses the existing versioning structure with one new file:
 
 ### The update prompt
 
-The prompt encodes EWMA-like dynamics:
-
-- The existing muse is the prior. New observations are the update.
-- Reinforced patterns strengthen. Contradicted patterns soften — weaken first, remove on subsequent
-  updates if not re-observed.
+- The muse is ground truth. Only change what new evidence gives reason to change.
 - New patterns are added tentatively. Confidence grows with repeated observation.
-- The muse represents many observations; a small batch should shift it proportionally.
+- Contradicted patterns weaken or are removed. The forgotten log records what and why.
+- Reinforced patterns strengthen.
+- Everything else stays.
 
 ### Order independence
 
 There is no canonical ordering of observations. They arrive from multiple machines and sources.
-Framing the update as "reinforce, add, or soften relative to the current muse" is naturally
+Framing the update as "reinforce, add, or weaken relative to the current muse" is naturally
 order-insensitive — the muse is the state, observations are perturbations.
 
 ## Commands
@@ -110,8 +119,7 @@ muse distill kiro                # only observe kiro conversations, then update
 
 First run (no existing muse): select the ~200 most recent observations and run a single learn
 call to produce the initial muse. Older observations are not lost — they can be folded in through
-subsequent incremental updates if they keep surfacing. This avoids context overflow on bootstrap
-and reflects the EWMA principle: recent observations matter most.
+subsequent incremental updates if they keep surfacing.
 
 `muse distill --rebuild` re-bootstraps from recent observations. This is disaster recovery.
 
@@ -150,11 +158,16 @@ Clustering gives thematic organization within each run. Incremental updates rely
 accumulating structure over time. The clustered merge prompt says "don't preserve cluster boundaries
 if a better structure emerges" — the thematic organization is already expected to be reorganized.
 
-### Why forgetting is acceptable
+### Why sticky over decaying?
 
-Strong patterns that are consistently reinforced survive. Weak patterns that appeared once fade.
-If forgetting drops something it shouldn't, the forgotten log makes it visible, and feeding the
-observation back in restores it.
+Important things are often infrequent. Annual review feedback, career decisions, core values —
+these appear rarely in observations but matter persistently. A decay model (EWMA) conflates
+frequency with importance: anything not continuously reinforced fades. This means re-learning
+the same things every cycle.
+
+A sticky model preserves everything unless contradicted. The muse doesn't forget your annual
+review feedback just because nobody mentioned it for six months. It forgets it when new evidence
+says something different.
 
 ## Deferred
 
@@ -162,11 +175,6 @@ observation back in restores it.
 
 Bootstrap uses the ~200 most recent observations. Users may want to control this — larger windows
 for comprehensive initial muses, smaller for faster starts. **Revisit when:** users ask for it.
-
-### Adaptive forgetting rate
-
-The forgetting rate is implicit in the prompt. An explicit mechanism — tracking observation count
-or muse age — could tune it. **Revisit when:** the muse is too sticky or too volatile.
 
 ### Conflict-aware sync
 
