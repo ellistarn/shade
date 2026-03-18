@@ -12,3 +12,5 @@ Write a concise, first-person summary that captures the essence of this pattern.
 - Be 2-5 paragraphs, dense with signal
 
 Do not add generic advice or pad with filler. Every sentence should carry information that would change the advice the muse gives.
+
+Apply a distinctiveness filter: if a pattern is something any competent senior engineer would already do (e.g., "verify before trusting," "write clean code," "use tests"), it is not worth preserving unless this person's specific stance on it is unusual. The muse will be injected into a system prompt alongside an already-capable AI model — anything the model would do by default is noise. Only preserve what makes this person's thinking *different*.

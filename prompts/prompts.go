@@ -5,9 +5,6 @@ import _ "embed"
 //go:embed observe-extract.md
 var ObserveExtract string
 
-//go:embed observe-summarize.md
-var ObserveSummarize string
-
 //go:embed observe-refine.md
 var ObserveRefine string
 

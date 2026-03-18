@@ -15,8 +15,9 @@ reasoning behind a preference: not what someone prefers, but why, and in what ci
 "Treats plan documents as the source of truth and expects implementations to trace back to
 them" passes. These shape how the muse actually responds.
 
-Input: candidate observations, one per line, from the extraction step.
+Input: candidate observations, each prefixed with "Observation: ", from the extraction step.
 
-Output: the filtered subset of observations that pass the test above, one per line. Keep the
-original wording — filter, don't rewrite. If nothing survives filtering, produce an empty
-response. Fewer high-quality observations are better than many generic ones.
+Output: the filtered subset of observations that pass the test above. Keep the original
+wording and the "Observation: " prefix — filter, don't rewrite. If nothing survives
+filtering, respond with exactly "NONE". Fewer high-quality observations are better than
+many generic ones.

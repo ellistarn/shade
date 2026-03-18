@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -78,9 +79,15 @@ reprocessing conversations. Use --reobserve to reprocess conversations from scra
 					fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 				}
 				if result.Uploaded > 0 {
-					fmt.Fprintf(cmd.OutOrStdout(), "Discovered %d new conversations (%s)\n", result.Uploaded, muse.FormatBytes(result.Bytes))
+					noun := "conversations"
+					if result.Uploaded == 1 {
+						noun = "conversation"
+					}
+					fmt.Fprintf(os.Stderr, "%-12s %d sources → %d new %s (%s)\n",
+						"load", result.Sources, result.Uploaded, noun, muse.FormatBytes(result.Bytes))
 				} else {
-					fmt.Fprintf(cmd.OutOrStdout(), "No new conversations\n")
+					fmt.Fprintf(os.Stderr, "%-12s %d sources → no new conversations\n",
+						"load", result.Sources)
 				}
 			}
 
@@ -123,7 +130,7 @@ func runClusteredDistill(ctx context.Context, stdout io.Writer, store storage.St
 		sonnet, // observe
 		sonnet, // classify
 		sonnet, // synthesize
-		opus,   // merge
+		opus,   // merge — editorial judgment where Opus earns its keep
 		embedClient,
 		distill.ClusteredOptions{
 			Reobserve:   reobserve,
@@ -131,6 +138,7 @@ func runClusteredDistill(ctx context.Context, stdout io.Writer, store storage.St
 			Limit:       limit,
 			Sources:     sources,
 			ArtifactDir: artifactDir,
+			Verbose:     verbose,
 		},
 	)
 	if err != nil {
@@ -146,6 +154,7 @@ func runMapReduceDistill(ctx context.Context, stdout io.Writer, store storage.St
 		Learn:     learn,
 		Limit:     limit,
 		Sources:   sources,
+		Verbose:   verbose,
 	}
 
 	if learn {
@@ -181,14 +190,36 @@ func runMapReduceDistill(ctx context.Context, stdout io.Writer, store storage.St
 }
 
 func printResult(stdout io.Writer, result *distill.Result, learnOnly bool) error {
-	for _, w := range result.Warnings {
-		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
-	}
 	if !learnOnly {
 		fmt.Fprintf(stdout, "Processed %d conversations (%d pruned)\n", result.Processed, result.Pruned)
 		if result.Remaining > 0 {
 			fmt.Fprintf(stdout, "%d conversations still pending observation (run distill again)\n", result.Remaining)
 		}
+	}
+	// Print per-stage telemetry
+	if len(result.Stages) > 0 {
+		fmt.Fprintf(stdout, "\n%-12s %-45s %8s %8s %8s %8s\n", "STAGE", "MODEL", "TIME", "IN TOK", "OUT TOK", "DATA")
+		fmt.Fprintf(stdout, "%-12s %-45s %8s %8s %8s %8s\n", "─────", "─────", "────", "──────", "───────", "────")
+		for _, s := range result.Stages {
+			model := s.Model
+			if len(model) > 45 {
+				model = "…" + model[len(model)-44:]
+			}
+			cost := ""
+			if s.Usage.Cost() > 0 {
+				cost = fmt.Sprintf("$%.4f", s.Usage.Cost())
+			}
+			fmt.Fprintf(stdout, "%-12s %-45s %8s %8s %8s %8s %s\n",
+				s.Name,
+				model,
+				formatDuration(s.Duration),
+				formatTokens(s.Usage.InputTokens),
+				formatTokens(s.Usage.OutputTokens),
+				formatBytes(s.DataSize),
+				cost,
+			)
+		}
+		fmt.Fprintln(stdout)
 	}
 	fmt.Fprintf(stdout, "Muse distilled (%dk input, %dk output tokens, $%.2f)\n",
 		result.Usage.InputTokens/1000, result.Usage.OutputTokens/1000, result.Usage.Cost())
@@ -199,6 +230,36 @@ func printResult(stdout io.Writer, result *distill.Result, learnOnly bool) error
 		fmt.Fprintf(stdout, "\n%s\n", result.Diff)
 	}
 	return nil
+}
+
+func formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
+func formatTokens(n int) string {
+	if n == 0 {
+		return "—"
+	}
+	if n >= 1000 {
+		return fmt.Sprintf("%dk", n/1000)
+	}
+	return fmt.Sprintf("%d", n)
+}
+
+func formatBytes(n int) string {
+	if n == 0 {
+		return "—"
+	}
+	if n >= 1024*1024 {
+		return fmt.Sprintf("%.1fMB", float64(n)/(1024*1024))
+	}
+	if n >= 1024 {
+		return fmt.Sprintf("%.1fKB", float64(n)/1024)
+	}
+	return fmt.Sprintf("%dB", n)
 }
 
 // artifactDirFromStore extracts the root directory from a store for artifact storage.

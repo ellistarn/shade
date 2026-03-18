@@ -8,15 +8,16 @@ the essence of how they think, made available to advise on their behalf. Generic
 observations produce a muse that says what any model would say without them. Distinctive
 observations produce a muse that actually captures what makes this person's thinking unique.
 
-Input: a preprocessed conversation centered on the human's voice. Each turn looks like:
+Input: a compressed conversation transcript. Each turn is labeled:
 
-    [context]: 1-2 sentence summary of what the assistant did
+    [assistant]: mechanically compressed assistant output (code blocks stripped,
+    tool calls collapsed, long messages truncated)
     [human]: the person's actual message
 
-The assistant's full output has been replaced with a short summary. This is deliberate — in
-raw conversations the assistant's output is 10-100x longer than the human's, and it's too
-easy to confuse "the model said X and the human didn't object" with "the human thinks X."
-Your job is to extract observations grounded in what the human actually said.
+The assistant's output has been mechanically compressed — code blocks are replaced with
+[code block] markers, tool calls show only [tool: name], and long responses are truncated.
+Focus on the human's messages. Use the compressed assistant output only as context for
+understanding what the human was reacting to.
 
 What counts as signal: the human originates an idea, corrects course, explains their reasoning,
 pushes back, shows vulnerability, or makes a deliberate choice between alternatives. Also
@@ -32,6 +33,12 @@ about the assistant's tendencies.
 What is not signal: passive acceptance ("sure", "go ahead", "looks good") only tells you the
 model did something adequate, not what the human uniquely values.
 
-Output: a list of observations, one per line. Each observation should be a self-contained
-statement about how this person thinks or works. Not every conversation has signal — if you
-don't find anything, produce an empty response.
+Output: a list of observations, one per line. Each line must start with "Observation: " followed
+by a self-contained statement about how this person thinks or works. Not every conversation
+has signal — if you don't find anything, respond with exactly "NONE".
+
+Example output format:
+
+Observation: Leads with the conclusion, then explains why — not the other way around.
+Observation: Treats naming inconsistency as a correctness issue, not a style preference.
+Observation: When the assistant proposes a wrapper, pushes back if the abstraction doesn't earn its keep.

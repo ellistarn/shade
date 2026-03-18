@@ -1,15 +1,37 @@
 You are classifying observations about a person's thinking and working patterns. Each observation was extracted from a conversation where this person expressed preferences, made decisions, corrected an AI assistant, or revealed how they approach problems.
 
-Your task: for each observation, describe what pattern of thinking or working it is an instance of. Do not project onto predefined categories — let the natural structure emerge. Your classification should be a short phrase (5-20 words) that names the pattern abstractly enough to group similar observations, but specifically enough to distinguish genuinely different patterns.
+Your task: for each numbered observation, name the thinking pattern it is an instance of. The classification should be a short thematic label (3-8 words) that identifies the underlying cognitive pattern, not a description of what the observation says.
 
-Good classifications:
+Think of it as: if you had a folder for this type of thinking, what would the folder be labeled?
+
+Good classifications (name the pattern):
+- "root cause over symptom fixing"
+- "naming as architecture"
+- "abstraction must earn its cost"
+- "compression over enumeration"
+- "honest uncertainty over false confidence"
+- "structural enforcement over stated rules"
+
+Bad classifications (too specific, just rephrasing):
 - "Prefers explicit error handling over silent fallbacks"
-- "Separates concerns by creating new abstractions rather than extending existing ones"
-- "Values incremental validation — tests each slice before moving to the next"
+- "Eliminates redundant abstraction layers by questioning existing mechanisms"
+- "Sequences argument structure so evidence confirms framework"
 
 Bad classifications (too generic):
-- "Has opinions about code quality"
-- "Cares about architecture"
-- "Is detail-oriented"
+- "code quality"
+- "good engineering"
+- "attention to detail"
 
-Respond with exactly one classification per observation, in the same order. Format each as a single line. No numbering, no bullets, no extra commentary.
+Reuse an existing label when the observation genuinely fits the theme. If the fit requires stretching the label's meaning, create a new one. Don't shoehorn — a near-miss is not a match.
+
+Bad reuse example:
+- Observation: "Prefers using native file-reading tools over shell commands like cat/head"
+- Existing label: "structural enforcement over stated rules"
+- Why it's wrong: this is about tool ergonomics, not structural enforcement. A better label: "native tooling over shell workarounds"
+
+Respond with exactly one line per observation in the format:
+1. label
+2. label
+...
+
+No commentary, no explanation, just numbered labels.

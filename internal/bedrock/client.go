@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -70,19 +71,31 @@ type StreamingRuntime interface {
 	ConverseStream(ctx context.Context, params *bedrockruntime.ConverseStreamInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.ConverseStreamOutput, error)
 }
 
-// Client wraps Bedrock's Converse API with rate limiting and retry.
+// Client wraps Bedrock's Converse API with adaptive rate limiting and retry.
 type Client struct {
 	runtime  Runtime
 	model    string
 	pricing  modelPricing
 	throttle chan struct{} // token bucket: one token per request slot
+
+	// Adaptive rate state
+	rateMu      sync.Mutex
+	ratePerSec  float64   // current target rate
+	successes   int       // consecutive successes since last 429
+	lastBackoff time.Time // last time we halved the rate (cooldown)
 }
 
 const (
-	maxRetries     = 5
-	baseBackoff    = 2 * time.Second
-	maxBackoff     = 60 * time.Second
-	requestsPerSec = 4 // target steady-state request rate
+	maxRetries  = 5
+	baseBackoff = 2 * time.Second
+	maxBackoff  = 60 * time.Second
+
+	// Adaptive rate limiter parameters
+	initialRate     = 20.0            // starting requests per second
+	minRate         = 1.0             // floor
+	maxRate         = 50.0            // ceiling
+	backoffCooldown = 5 * time.Second // don't halve rate more than once per cooldown
+	growthThreshold = 10              // consecutive successes before rate increase
 )
 
 func NewClient(ctx context.Context, model string) (*Client, error) {
@@ -100,12 +113,13 @@ func NewClient(ctx context.Context, model string) (*Client, error) {
 		model = resolved
 	}
 	c := &Client{
-		runtime:  bedrockruntime.NewFromConfig(cfg),
-		model:    model,
-		pricing:  lookupPricing(model),
-		throttle: make(chan struct{}, requestsPerSec),
+		runtime:    bedrockruntime.NewFromConfig(cfg),
+		model:      model,
+		pricing:    lookupPricing(model),
+		throttle:   make(chan struct{}, int(maxRate)),
+		ratePerSec: initialRate,
 	}
-	// Start the token refiller: adds one request token per 1/requestsPerSec interval.
+	// Start the token refiller: adds request tokens at the adaptive rate.
 	go c.refillTokens(ctx)
 	return c, nil
 }
@@ -152,9 +166,10 @@ func (c *Client) Model() string {
 	return c.model
 }
 
-// refillTokens adds request tokens at a steady rate.
+// refillTokens adds request tokens at the current adaptive rate.
 func (c *Client) refillTokens(ctx context.Context) {
-	ticker := time.NewTicker(time.Second / time.Duration(requestsPerSec))
+	interval := time.Second / time.Duration(c.currentRate())
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -165,7 +180,44 @@ func (c *Client) refillTokens(ctx context.Context) {
 			case c.throttle <- struct{}{}:
 			default: // bucket full, discard
 			}
+			// Adjust ticker if rate changed
+			newInterval := time.Second / time.Duration(c.currentRate())
+			if newInterval != interval {
+				interval = newInterval
+				ticker.Reset(interval)
+			}
 		}
+	}
+}
+
+// currentRate returns the current adaptive rate.
+func (c *Client) currentRate() float64 {
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+	return c.ratePerSec
+}
+
+// onThrottle halves the rate (with cooldown to prevent cascade).
+func (c *Client) onThrottle() {
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+	c.successes = 0
+	if time.Since(c.lastBackoff) < backoffCooldown {
+		return // already backed off recently
+	}
+	c.lastBackoff = time.Now()
+	c.ratePerSec = max(c.ratePerSec/2, minRate)
+	fmt.Fprintf(os.Stderr, "  rate → %.0f req/s\n", c.ratePerSec)
+}
+
+// onSuccess increments success counter and grows rate after threshold.
+func (c *Client) onSuccess() {
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+	c.successes++
+	if c.successes >= growthThreshold {
+		c.successes = 0
+		c.ratePerSec = min(c.ratePerSec+1, maxRate)
 	}
 }
 
@@ -321,9 +373,14 @@ func (c *Client) retryThrottled(ctx context.Context, fn func() error) error {
 		case <-c.throttle:
 		}
 		err := fn()
-		if err == nil || !isThrottling(err) {
+		if err == nil {
+			c.onSuccess()
+			return nil
+		}
+		if !isThrottling(err) {
 			return err
 		}
+		c.onThrottle()
 		lastErr = err
 		backoff := backoffDuration(attempt)
 		fmt.Fprintf(os.Stderr, "  throttled (attempt %d/%d), backing off %s\n", attempt+1, maxRetries, backoff.Round(time.Millisecond))

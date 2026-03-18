@@ -11,23 +11,25 @@ frequently-observed patterns at the expense of rare but defining ones.
 
 ### Pipeline
 
-Each conversation is sent raw to an extraction LLM that identifies what the human's messages reveal
-about how they think — corrections, course changes, reasoning, deliberate choices. When a
-conversation exceeds the context window, assistant messages are mechanically compressed (strip code
-blocks, collapse tool output to markers, truncate long messages). A refine step filters candidates
-to only those that would change how the muse behaves, and a deterministic relevance filter drops
-non-observations (empty output, placeholder tokens, LLM meta-commentary).
+Conversations are mechanically compressed (code blocks stripped, tool output collapsed to markers,
+long assistant messages truncated) and sent to an extraction LLM that identifies what the human's
+messages reveal about how they think. The extract prompt requires a structured `Observation:` prefix
+on each output line — lines without the prefix are discarded at parse time. A refine step filters
+candidates to only those that would change how the muse behaves.
 
-The surviving observations are classified, embedded, and grouped into thematic clusters. Each cluster
-is synthesized independently, then merged with unclustered noise observations into the final muse.md.
-When the observation count is too small for clustering to add value, the pipeline falls back to
-single-pass compose.
+The surviving observations are classified into short thematic labels, embedded, and grouped into
+clusters. Primary grouping is by exact label match — the classifier is given existing labels and
+converges on a shared vocabulary, so observations on the same theme get the same label. HDBSCAN
+runs on the ungrouped residual to find additional structure. Each cluster is synthesized
+independently, then merged with any unclustered noise observations into the final muse.md. When the
+observation count is too small for clustering to add value, the pipeline falls back to single-pass
+compose.
 
 ```
 conversations ─► OBSERVE ─► observations ─► CLUSTER ─► samples ─► COMPOSE ─► muse.md
 
-OBSERVE    raw conversation → [compress if needed] → extract → refine → relevance filter
-CLUSTER    classify → embed → group (HDBSCAN) → sample
+OBSERVE    compress → extract (Observation: prefix) → refine → parse
+CLUSTER    classify (label convergence) → embed → group (label match + HDBSCAN) → sample
 COMPOSE    per-cluster synthesis → merge with noise
 ```
 
@@ -97,14 +99,14 @@ containing all per-observation entries:
 
 // distill/classifications/{source}/{session_id}.json
 {"fingerprint": "def456", "items": [
-  {"observation": "obs1", "classification": "..."},
-  {"observation": "obs2", "classification": "..."}
+  {"observation": "obs1", "classification": "root cause over symptom fixing"},
+  {"observation": "obs2", "classification": "abstraction must earn its cost"}
 ]}
 
 // distill/embeddings/{source}/{session_id}.json
 {"fingerprint": "ghi789", "items": [
-  {"classification": "...", "vector": [0.1, 0.2, ...]},
-  {"classification": "...", "vector": [0.3, 0.4, ...]}
+  {"classification": "root cause over symptom fixing", "vector": [0.1, 0.2, ...]},
+  {"classification": "abstraction must earn its cost", "vector": [0.3, 0.4, ...]}
 ]}
 ```
 
@@ -118,65 +120,61 @@ partitions. This also normalizes for frequency: a pattern that dominates by volu
 one cluster with the same token budget as a smaller cluster, preventing it from drowning out rarer
 themes.
 
-### Why send raw conversation to extract?
+### Why mechanical compression over raw or LLM-summarized input?
 
-Summarizing assistant messages before extraction would reduce token count but costs an LLM call per
-turn and is lossy — the extract model needs enough context to understand what the human was reacting
-to, and a compressed summary may omit the detail that provoked a correction. The extraction prompt
-focuses on the human's voice regardless of how much assistant content surrounds it.
+The extract model needs enough context to understand what the human was reacting to, but assistant
+messages are mostly code blocks, tool output, and verbose explanations — none of which carry signal
+about how the owner thinks. Mechanical compression (strip code fences, collapse tool calls to
+`[tool: name]`, truncate long assistant messages to 500 chars) removes the bloat while preserving
+human messages in full. This is cheaper and faster than LLM summarization and doesn't risk losing
+the detail that provoked a correction.
 
-Most conversations fit within the context window without any processing. For the ones that don't,
-mechanical compression strips code blocks, collapses tool output to markers like `[tool: file_edit]`,
-and truncates long assistant messages. This targets the main token bloat — assistant code and tool
-output carry zero signal about how the owner thinks. If compression alone isn't sufficient, chunking
-at turn boundaries is the natural next step, but the expectation is that compression handles
-effectively all oversize conversations.
+### Why a structured prefix over empty-output instructions?
 
-### Why a deterministic relevance filter?
+LLMs can't reliably produce empty output. Instructing the model to "return nothing" when a
+conversation has no signal is adversarial to how token prediction works — the model wants to emit
+tokens. Instead of hoping for absence, we require structure: each observation must start with
+`Observation:`. Lines without the prefix are discarded at parse time. This converts a semantic
+judgment ("is this nothing?") into a structural parse rule ("does this line start with the prefix?").
 
-LLMs can't reliably produce empty output. The extract and refine prompts instruct the model to
-return nothing when a conversation has no signal, but the model sometimes produces meta-commentary
-instead ("I don't see any candidate observations"). This is a property of the technology, not a
-prompt problem — generating tokens that mean "I have no tokens to generate" is adversarial to how
-token prediction works.
+The `Observation:` prefix also anchors the model's generation — it's harder to drift into
+conversational meta-commentary when the required output format is explicit. A secondary relevance
+filter catches any well-formed-but-vacuous observations that slip through (e.g. parenthesized
+meta-commentary).
 
-The relevance filter is a mechanical backstop: pattern matching on known non-observation output
-(empty strings, placeholder tokens, meta-commentary prefixes). It catches pipeline defects, not
-borderline observations. Any string that passes pattern matching is a genuine attempt at an
-observation.
+### Why label convergence in classification?
 
-### Why classify before embedding?
+The classifier receives each observation individually and assigns a short thematic label (3-8 words)
+naming the thinking pattern it's an instance of. Critically, the classifier also receives the list of
+labels already assigned to other observations and is instructed to reuse an existing label when one
+fits.
 
-We could embed raw observations and let clustering discover structure unsupervised. Instead,
-classification situates each observation — describing _what pattern of thinking or working it's an
-instance of_ — so similar observations land near each other in embedding space even when they use
-different language. This is distinct from OBSERVE, which asks "what's here." CLASSIFY asks "what is
-this an instance of."
+Without label convergence, each observation gets a unique paraphrase ("abstraction must earn its
+cost" vs. "abstraction must earn its keep") and the embedding space is flat — everything is
+equidistant. With convergence, the classifier maps both to the same label, and grouping becomes
+trivial: exact string match.
 
-Classification should not project onto predefined axes (e.g. "wisdom vs knowledge"). That constrains
-what clusters can emerge. Let the clusters discover the natural axes.
+This emerged from observing that HDBSCAN couldn't find density structure in 168 observations with
+median cosine distance 0.92. The problem wasn't the clustering algorithm — it was that
+classifications were paraphrasing, not categorizing. Fixing the input was more effective than tuning
+the algorithm.
 
-### Why HDBSCAN over k-means?
+### Why two-phase grouping (label match + HDBSCAN)?
 
-HDBSCAN discovers cluster count automatically and explicitly labels noise. k-means forces every
-observation into a cluster and requires choosing k upfront. The noise-handling property is
-load-bearing — outliers that don't cluster yet may emerge as themes with more data.
+Primary grouping is exact label match — observations with the same classification label form a
+cluster. This works because label convergence produces a shared vocabulary with ~60% reuse.
+
+HDBSCAN runs on the ungrouped residual (observations whose labels appear only once) to find
+additional structure via embedding similarity. It discovers cluster count automatically and explicitly
+labels noise. This is a fallback, not the primary mechanism — at current scale, label match does most
+of the work.
 
 ### Why preserve noise?
 
-HDBSCAN noise means "doesn't fit a group," not "worthless." Observations that don't cluster may be
-the most distinctive — patterns expressed once or twice that make the muse sound like you rather
-than like generic advice. Filtering noise early discards it based on no contextual information.
-
-Instead, noise flows through clustering and is passed as raw observations to COMPOSE alongside the
-cluster syntheses. COMPOSE is already the judgment step — it decides what to organize, preserve, or
-let go. Framing tells COMPOSE to preserve what's distinctive and ignore what's redundant with the
-clusters. Don't make a mechanical decision where the right answer requires contextual judgment.
-
-### Why sample rather than summarize per-cluster?
-
-We could summarize each cluster's full content before synthesis. Instead, we select representative
-examples and pass raw observations. This preserves voice and specificity that summaries flatten.
+Noise means "doesn't fit a group," not "worthless." Observations that don't cluster may be the most
+distinctive — patterns expressed once or twice that make the muse sound like you rather than like
+generic advice. Noise flows through to COMPOSE alongside cluster syntheses. COMPOSE is already the
+judgment step — it decides what to organize, preserve, or let go.
 
 ### Why two-pass compose (synthesize then merge)?
 
@@ -185,28 +183,6 @@ summaries. Single-pass would be simpler but forces one LLM call to both synthesi
 passes keep each call focused and produce debuggable intermediate artifacts.
 
 ## Deferred
-
-Intentional simplifications for the first implementation. Each names what's deferred, why it's
-acceptable now, and what would trigger revisiting.
-
-### Why random sampling over centroid-nearest + edges?
-
-Centroid-nearest + edge sampling is cheap to compute once you have embeddings and cluster
-assignments, and it's meaningfully better than random for thematic representation — centroid-nearest
-captures the cluster's core, edges capture its boundaries with neighboring clusters. But it's a
-sampling refinement layered on top of clustering. The goal of the first implementation is to validate
-whether clustering itself improves muse quality over map-reduce. If clustering doesn't help, better
-sampling wouldn't have saved it — the problem would be upstream. If clustering does help, sampling
-sophistication is the obvious next lever. **Revisit when:** clustering is validated and output
-quality plateaus.
-
-### Why token budgets over concept weighting?
-
-Fixed token budgets per cluster are predictable and debuggable. Concept weighting (having the model
-assess which observations carry more weight and sampling proportionally) adds an LLM call per
-observation and introduces a subjective scoring dimension that's hard to evaluate. Building two
-novel things at once with no way to attribute quality differences to either one is a bad experiment.
-**Revisit when:** clustering is validated and sampling is the bottleneck for output quality.
 
 ### Why not stabilize clusters across runs?
 
