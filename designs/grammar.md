@@ -47,16 +47,35 @@ Sends a question to the muse. Stateless, one-shot. The muse is loaded as the sys
 
 ### import
 
-Interactive, human-in-the-loop. The muse reads the imported content, cross-references with what it
-already knows about the owner, and asks targeted questions:
+Some of the strongest signal about how you think is never seen by muse. Voice profiles,
+CLAUDE.md preferences, style guides — these are injected as system prompts or agent configuration,
+and conversation parsers strip them. Muse sees the assistant's compliant behavior but not the
+explicit instructions that caused it. A voice profile that says "never soften feedback so the
+message doesn't land" produces terse conversations, but muse can't distinguish "instructed this
+style" from "the model happened to respond this way."
 
-- "You mentioned the API proposal. What was your reaction to the interface design?"
-- "There's a cost/quality tradeoff in this design. Where did you land?"
-- "You didn't comment on the testing strategy. Was that agreement or did you not get to it?"
+`import` makes this signal observable. Interactive, human-in-the-loop. The muse reads the imported
+content, cross-references with what it already knows about the owner, and asks targeted questions:
 
-The owner answers. The muse asks a few more questions. The exchange is a conversation, and
-conversations are already the input type for observe. Interactive import produces a conversation
-about the imported content, and that conversation gets observed like any other.
+```
+$ muse import ~/llm_templates/voice_profile.md
+
+Muse: This profile bans em-dashes, "delve," and other terms you associate
+      with AI-generated text. Is this a writing preference, or do you
+      actively distrust content that uses them?
+
+You:   Both. If I see em-dashes in a doc, I assume it wasn't reviewed.
+
+Muse: You say "never soften feedback so the message doesn't land." Does
+      that apply equally to peers, reports, and leadership?
+
+You:   Peers and leadership yes. Reports I'm gentler with — I want them
+       to hear it, not shut down.
+```
+
+The exchange is a conversation, and conversations are the input type for observe. Interactive import
+produces a conversation about the imported content, and that conversation gets observed like any
+other.
 
 ```
 import : (Muse, Text) → Conversation → observe → [Observation]
