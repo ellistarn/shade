@@ -2,27 +2,19 @@
 
 ## Problem
 
-Batch distillation reprocesses all observations every run. A 200k context window holds ~100-130
-conversations before the learn step overflows. Clustered distillation solves this but introduces six
-pipeline stages, an embedding model dependency, a custom HDBSCAN implementation, and a local-only
-artifact store. We need to update a document with new information without rereading everything.
+Batch distillation reprocesses all observations every run and overflows context at ~130
+conversations.
 
-## Insight
-
-The question isn't "what does the complete set of observations say?" — it's "given who we think
-this person is, what does this new evidence change?"
+## Approach
 
 ```
 muse(n+1) = update(muse(n), new_observations)
 ```
 
-Each update folds new observations into the existing muse. The muse is sticky — things persist
-unless the new evidence gives reason to change them. This is editing a document, not updating a
-moving average.
+Each update folds new observations into the existing muse. The context window holds only the
+current muse plus one batch of observations, never the full history.
 
-## Design
-
-### Pipeline
+## Pipeline
 
 ```
 conversations ─► OBSERVE ─► observations ─► UPDATE ─► (muse', forgotten)
@@ -40,8 +32,7 @@ conversations ─► OBSERVE ─► observations ─► UPDATE ─► (muse', fo
                 └───────────────────────────────────────────────────────┘
 ```
 
-Two stages, two model tiers. The context window holds only the current muse plus one batch of
-observations, never the full history.
+Two stages, two model tiers.
 
 ### Update granularity
 
@@ -61,20 +52,22 @@ The muse is ground truth. The update only changes what new evidence gives reason
 Forgetting comes from contradiction or subsumption, not from time passing. "I used to prefer tabs,
 now I use spaces" is a reason to forget. Six months of silence about tabs is not.
 
-### The forgotten log
+The forgotten log is defined in [grammar.md](grammar.md). Each update produces both an updated
+muse and a forgotten log recording what was removed and why.
 
-Each update produces two outputs:
+### The update prompt
 
-1. **muse.md** — the updated muse
-2. **forgotten.md** — what was removed or softened, with a reason
+- The muse is ground truth. Only change what new evidence gives reason to change.
+- New patterns are added tentatively. Confidence grows with repeated observation.
+- Contradicted patterns weaken or are removed. The forgotten log records what and why.
+- Reinforced patterns strengthen.
+- Everything else stays.
 
-Every entry in the forgotten log has a cause: "contradicted by X" or "subsumed by Y." If the log
-ever says "hasn't been mentioned recently," the update prompt is wrong.
+### Order independence
 
-The forgotten log provides:
-
-- **Audit.** Why did the muse stop mentioning X?
-- **Recovery.** Feed a dropped observation back in to restore it.
+There is no canonical ordering of observations. They arrive from multiple machines and sources.
+Framing the update as "reinforce, add, or weaken relative to the current muse" is naturally
+order-insensitive. The muse is the state, observations are perturbations.
 
 ### Storage
 
@@ -90,20 +83,6 @@ Uses the existing versioning structure with one new file:
 │   └── forgotten.md                                  # new
 ```
 
-### The update prompt
-
-- The muse is ground truth. Only change what new evidence gives reason to change.
-- New patterns are added tentatively. Confidence grows with repeated observation.
-- Contradicted patterns weaken or are removed. The forgotten log records what and why.
-- Reinforced patterns strengthen.
-- Everything else stays.
-
-### Order independence
-
-There is no canonical ordering of observations. They arrive from multiple machines and sources.
-Framing the update as "reinforce, add, or weaken relative to the current muse" is naturally
-order-insensitive — the muse is the state, observations are perturbations.
-
 ## Commands
 
 ```bash
@@ -118,63 +97,52 @@ muse distill kiro                # only observe kiro conversations, then update
 ## Bootstrap
 
 First run (no existing muse): select the ~200 most recent observations and run a single learn
-call to produce the initial muse. Older observations are not lost — they can be folded in through
+call to produce the initial muse. Older observations are not lost; they can be folded in through
 subsequent incremental updates if they keep surfacing.
 
 `muse distill --rebuild` re-bootstraps from recent observations. This is disaster recovery.
 
 ## Cost
 
-The observe step is shared across all approaches. Post-observe cost per sync (3 new conversations,
-~15 new observations, ~15 clusters, Opus with 16k thinking budget):
+Post-observe cost per sync (3 new conversations, ~15 new observations, Opus with 16k thinking
+budget): ~$1.60. Thinking tokens dominate. The update input is always ~7k tokens (the muse plus
+the new batch), so cost does not grow with total observation count.
 
-| | Map-reduce | Clustered | Incremental |
-|---|---|---|---|
-| Classify | — | ~$0.07 | — |
-| Embed | — | ~$0.01 | — |
-| Synthesize | — | ~$0.90 | — |
-| Learn/Merge/Update | ~$5+ (300k in) | ~$1.80 (20k in) | ~$1.60 (7k in) |
-| **Total** | **~$5+** | **~$2.80** | **~$1.60** |
+## Retention: sticky vs. decaying
 
-Thinking tokens dominate the Opus call in both clustered and incremental. The Sonnet calls in
-clustered add ~$1 per sync. Incremental is ~40% cheaper than clustered per sync — meaningful
-but not dramatic.
+The update prompt drops one-off observations that don't reflect a clear pattern. This is a filter
+on weak evidence and is uncontroversial.
 
-The cost advantage widens at scale: map-reduce's Opus input grows linearly with total observations
-and eventually overflows. Clustered's synthesize step grows with cluster count. Incremental's
-update is always ~7k tokens — the muse plus the new batch.
+The harder question is what happens to established patterns over time. Two options:
 
-The primary advantage is simplicity, not cost.
+**Sticky**: patterns persist unless contradicted. Forgetting requires evidence.
+**Decaying**: patterns fade unless reinforced. Forgetting is the default.
 
-## Decisions
+Both have failure modes. Sticky can accumulate stale patterns that no longer apply but were never
+explicitly contradicted. Decaying loses important infrequent patterns: annual review feedback,
+career decisions, core values. These appear rarely but matter persistently.
 
-### Why incremental over clustered?
+Decay is also hard to reason about. What rate? Uniform across all patterns? Some important things
+only happen once a year. A decay model either needs per-pattern tuning (complex, probably wrong)
+or applies a uniform rate that is too aggressive for rare patterns and too lenient for stale ones.
 
-Both solve context overflow. Clustering groups and summarizes before merging — six stages, four
-API calls, an embedding model, a custom clustering algorithm. Incremental updates never look at all
-observations at once — two stages, one API call.
+We start with sticky. The failure mode (stale accumulation) is recoverable: `--rebuild`
+re-bootstraps from recent observations, and the forgotten log provides audit. The decaying failure
+mode (re-learning the same things every cycle) is more disorienting and harder to detect.
 
-Clustering gives thematic organization within each run. Incremental updates rely on the muse
-accumulating structure over time. The clustered merge prompt says "don't preserve cluster boundaries
-if a better structure emerges" — the thematic organization is already expected to be reorganized.
+Long-term memory (separating stable traits from evolving patterns) may be part of the best answer.
+It remains to be seen.
 
-### Why sticky over decaying?
-
-Important things are often infrequent. Annual review feedback, career decisions, core values —
-these appear rarely in observations but matter persistently. A decay model (EWMA) conflates
-frequency with importance: anything not continuously reinforced fades. This means re-learning
-the same things every cycle.
-
-A sticky model preserves everything unless contradicted. The muse doesn't forget your annual
-review feedback just because nobody mentioned it for six months. It forgets it when new evidence
-says something different.
+Note: `self-awareness.md` currently says "Natural decay... the observation gets pruned in future
+synthesis cycles." This contradicts the sticky model. If there is agreement on sticky, we should
+update self-awareness.md in a follow-up change.
 
 ## Deferred
 
 ### Configurable bootstrap window
 
-Bootstrap uses the ~200 most recent observations. Users may want to control this — larger windows
-for comprehensive initial muses, smaller for faster starts. **Revisit when:** users ask for it.
+Bootstrap uses the ~200 most recent observations. Users may want to control this. **Revisit
+when:** users ask for it.
 
 ### Conflict-aware sync
 
