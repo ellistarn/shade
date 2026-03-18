@@ -28,18 +28,13 @@ func (s *ArtifactStore) distillPath(kind, source, sessionID string) string {
 	return filepath.Join(s.root, "distill", kind, source, sessionID+".json")
 }
 
-// clusterPath returns the full path for a cluster artifact.
-// pattern: {root}/distill/clusters/{id}.json
-func (s *ArtifactStore) clusterPath(id string) string {
-	return filepath.Join(s.root, "distill", "clusters", id+".json")
-}
-
 // PutObservations writes observations for a conversation.
 func (s *ArtifactStore) PutObservations(source, sessionID string, obs *Observations) error {
 	return s.putJSON(s.distillPath("observations", source, sessionID), obs)
 }
 
-// GetObservations reads observations for a conversation. Returns nil if not found.
+// GetObservations reads observations for a conversation.
+// Returns os.ErrNotExist (via os.IsNotExist) when no artifact is found.
 func (s *ArtifactStore) GetObservations(source, sessionID string) (*Observations, error) {
 	var obs Observations
 	if err := s.getJSON(s.distillPath("observations", source, sessionID), &obs); err != nil {
@@ -53,32 +48,14 @@ func (s *ArtifactStore) PutClassifications(source, sessionID string, cls *Classi
 	return s.putJSON(s.distillPath("classifications", source, sessionID), cls)
 }
 
-// GetClassifications reads classifications for a conversation. Returns nil if not found.
+// GetClassifications reads classifications for a conversation.
+// Returns os.ErrNotExist (via os.IsNotExist) when no artifact is found.
 func (s *ArtifactStore) GetClassifications(source, sessionID string) (*Classifications, error) {
 	var cls Classifications
 	if err := s.getJSON(s.distillPath("classifications", source, sessionID), &cls); err != nil {
 		return nil, err
 	}
 	return &cls, nil
-}
-
-// PutEmbeddings writes embeddings for a conversation.
-func (s *ArtifactStore) PutEmbeddings(source, sessionID string, emb *Embeddings) error {
-	return s.putJSON(s.distillPath("embeddings", source, sessionID), emb)
-}
-
-// GetEmbeddings reads embeddings for a conversation. Returns nil if not found.
-func (s *ArtifactStore) GetEmbeddings(source, sessionID string) (*Embeddings, error) {
-	var emb Embeddings
-	if err := s.getJSON(s.distillPath("embeddings", source, sessionID), &emb); err != nil {
-		return nil, err
-	}
-	return &emb, nil
-}
-
-// PutCluster writes a cluster file (ephemeral, overwritten each run).
-func (s *ArtifactStore) PutCluster(id string, cluster *Cluster) error {
-	return s.putJSON(s.clusterPath(id), cluster)
 }
 
 // ListObservations returns all (source, sessionID) pairs that have observations.
@@ -89,11 +66,6 @@ func (s *ArtifactStore) ListObservations() ([]SourceSession, error) {
 // ListClassifications returns all (source, sessionID) pairs that have classifications.
 func (s *ArtifactStore) ListClassifications() ([]SourceSession, error) {
 	return s.listArtifacts("classifications")
-}
-
-// ListEmbeddings returns all (source, sessionID) pairs that have embeddings.
-func (s *ArtifactStore) ListEmbeddings() ([]SourceSession, error) {
-	return s.listArtifacts("embeddings")
 }
 
 // DeleteObservations removes all observation artifacts.
@@ -109,16 +81,6 @@ func (s *ArtifactStore) DeleteObservationsForSource(source string) error {
 // DeleteClassifications removes all classification artifacts.
 func (s *ArtifactStore) DeleteClassifications() error {
 	return os.RemoveAll(filepath.Join(s.root, "distill", "classifications"))
-}
-
-// DeleteEmbeddings removes all embedding artifacts.
-func (s *ArtifactStore) DeleteEmbeddings() error {
-	return os.RemoveAll(filepath.Join(s.root, "distill", "embeddings"))
-}
-
-// DeleteClusters removes all cluster artifacts.
-func (s *ArtifactStore) DeleteClusters() error {
-	return os.RemoveAll(filepath.Join(s.root, "distill", "clusters"))
 }
 
 // SourceSession identifies a conversation by its source and session ID.
@@ -142,7 +104,7 @@ func (s *ArtifactStore) listArtifacts(kind string) ([]SourceSession, error) {
 		}
 		rel, err := filepath.Rel(dir, path)
 		if err != nil {
-			return nil
+			return fmt.Errorf("filepath.Rel(%s, %s): %w", dir, path, err)
 		}
 		parts := strings.SplitN(filepath.ToSlash(rel), "/", 2)
 		if len(parts) != 2 {
@@ -160,15 +122,25 @@ func (s *ArtifactStore) listArtifacts(kind string) ([]SourceSession, error) {
 	return results, nil
 }
 
+// putJSON atomically writes JSON to path using write-to-temp + rename.
 func (s *ArtifactStore) putJSON(path string, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("failed to marshal artifact: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
-	return os.WriteFile(path, data, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write artifact: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp) // best-effort cleanup
+		return fmt.Errorf("failed to rename artifact: %w", err)
+	}
+	return nil
 }
 
 func (s *ArtifactStore) getJSON(path string, v any) error {
@@ -177,7 +149,10 @@ func (s *ArtifactStore) getJSON(path string, v any) error {
 		if os.IsNotExist(err) {
 			return err
 		}
-		return fmt.Errorf("failed to read artifact: %w", err)
+		return fmt.Errorf("failed to read artifact %s: %w", path, err)
 	}
-	return json.Unmarshal(data, v)
+	if err := json.Unmarshal(data, v); err != nil {
+		return fmt.Errorf("failed to parse artifact %s: %w", path, err)
+	}
+	return nil
 }

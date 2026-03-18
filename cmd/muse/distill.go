@@ -12,7 +12,6 @@ import (
 
 	"github.com/ellistarn/muse/internal/bedrock"
 	"github.com/ellistarn/muse/internal/distill"
-	"github.com/ellistarn/muse/internal/embedding"
 	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/muse"
 	"github.com/ellistarn/muse/internal/storage"
@@ -34,9 +33,9 @@ muse is always re-distilled.
 
 Two distillation methods are available:
 
-  clustering (default) — classifies observations, embeds them, clusters with
-  HDBSCAN, synthesizes per-cluster, then merges into muse.md. Produces
-  thematically coherent output.
+  clustering (default) — classifies observations, groups by label convergence,
+  synthesizes per-cluster, then merges into muse.md. Produces thematically
+  coherent output.
 
   map-reduce — observe maps each conversation into observations, then learn
   reduces all observations into a single muse.md. Simpler, sufficient for
@@ -110,10 +109,6 @@ func runClusteredDistill(ctx context.Context, stdout io.Writer, store storage.St
 	if err != nil {
 		return fmt.Errorf("opus client: %w", err)
 	}
-	embedClient, err := embedding.NewClient(ctx)
-	if err != nil {
-		return fmt.Errorf("embedding client: %w", err)
-	}
 
 	// Determine artifact directory from store root
 	artifactDir := artifactDirFromStore(store)
@@ -123,7 +118,6 @@ func runClusteredDistill(ctx context.Context, stdout io.Writer, store storage.St
 		sonnet, // classify
 		sonnet, // synthesize
 		opus,   // merge — editorial judgment where Opus earns its keep
-		embedClient,
 		distill.ClusteredOptions{
 			Reobserve:   reobserve,
 			Reclassify:  reclassify,

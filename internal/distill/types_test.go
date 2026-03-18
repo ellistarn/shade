@@ -112,33 +112,6 @@ func TestArtifactStoreClassifications(t *testing.T) {
 	}
 }
 
-func TestArtifactStoreEmbeddings(t *testing.T) {
-	root := t.TempDir()
-	store := NewArtifactStore(root)
-
-	emb := &Embeddings{
-		Fingerprint: "ghi789",
-		Items: []Embedding{
-			{Classification: "pattern of X", Vector: []float64{0.1, 0.2, 0.3}},
-		},
-	}
-
-	if err := store.PutEmbeddings("opencode", "ses_003", emb); err != nil {
-		t.Fatalf("PutEmbeddings: %v", err)
-	}
-
-	got, err := store.GetEmbeddings("opencode", "ses_003")
-	if err != nil {
-		t.Fatalf("GetEmbeddings: %v", err)
-	}
-	if got.Fingerprint != "ghi789" {
-		t.Errorf("fingerprint: got %q, want %q", got.Fingerprint, "ghi789")
-	}
-	if len(got.Items) != 1 || got.Items[0].Vector[0] != 0.1 {
-		t.Errorf("unexpected embedding data: %+v", got.Items)
-	}
-}
-
 func TestArtifactStoreCacheMiss(t *testing.T) {
 	root := t.TempDir()
 	store := NewArtifactStore(root)

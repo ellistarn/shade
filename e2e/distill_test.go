@@ -10,7 +10,6 @@ import (
 
 	"github.com/ellistarn/muse/internal/conversation"
 	"github.com/ellistarn/muse/internal/distill"
-	"github.com/ellistarn/muse/internal/embedding"
 	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/testutil"
 )
@@ -260,12 +259,11 @@ func TestMapReduce_IncrementalPersist(t *testing.T) {
 func TestClustered_EndToEnd(t *testing.T) {
 	store := twoSessionStore()
 	mock := &clusterMockLLM{}
-	embedder := embedding.NewMockEmbedder(64)
 	root := t.TempDir()
 
 	result, err := distill.RunClustered(
 		context.Background(), store,
-		mock, mock, mock, mock, embedder,
+		mock, mock, mock, mock,
 		distill.ClusteredOptions{ArtifactDir: root, Limit: 100},
 	)
 	if err != nil {
@@ -310,19 +308,18 @@ func TestClustered_CacheHit(t *testing.T) {
 	})
 
 	mock := &clusterMockLLM{}
-	embedder := embedding.NewMockEmbedder(64)
 	root := t.TempDir()
 	opts := distill.ClusteredOptions{ArtifactDir: root, Limit: 100}
 
 	// First run
-	_, err := distill.RunClustered(context.Background(), store, mock, mock, mock, mock, embedder, opts)
+	_, err := distill.RunClustered(context.Background(), store, mock, mock, mock, mock, opts)
 	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
 	callsBefore := len(mock.calls)
 
 	// Second run should use cache
-	_, err = distill.RunClustered(context.Background(), store, mock, mock, mock, mock, embedder, opts)
+	_, err = distill.RunClustered(context.Background(), store, mock, mock, mock, mock, opts)
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}
@@ -335,12 +332,11 @@ func TestClustered_CacheHit(t *testing.T) {
 func TestClustered_NoConversations(t *testing.T) {
 	store := testutil.NewConversationStore()
 	mock := &clusterMockLLM{}
-	embedder := embedding.NewMockEmbedder(64)
 	root := t.TempDir()
 
 	result, err := distill.RunClustered(
 		context.Background(), store,
-		mock, mock, mock, mock, embedder,
+		mock, mock, mock, mock,
 		distill.ClusteredOptions{ArtifactDir: root, Limit: 100},
 	)
 	if err != nil {
@@ -364,12 +360,11 @@ func TestClustered_ObserveError(t *testing.T) {
 	})
 
 	mock := &clusterMockLLM{failOnExtract: true}
-	embedder := embedding.NewMockEmbedder(64)
 	root := t.TempDir()
 
 	_, err := distill.RunClustered(
 		context.Background(), store,
-		mock, mock, mock, mock, embedder,
+		mock, mock, mock, mock,
 		distill.ClusteredOptions{ArtifactDir: root, Limit: 100},
 	)
 	if err == nil {
@@ -389,12 +384,11 @@ func TestClustered_Limit(t *testing.T) {
 	}
 
 	mock := &clusterMockLLM{}
-	embedder := embedding.NewMockEmbedder(64)
 	root := t.TempDir()
 
 	result, err := distill.RunClustered(
 		context.Background(), store,
-		mock, mock, mock, mock, embedder,
+		mock, mock, mock, mock,
 		distill.ClusteredOptions{ArtifactDir: root, Limit: 2},
 	)
 	if err != nil {

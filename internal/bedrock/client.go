@@ -442,6 +442,14 @@ func (c *Client) ConverseMessagesStream(ctx context.Context, system string, mess
 			MaxTokens: aws.Int32(maxTokens),
 		},
 	}
+	if o.ThinkingBudget > 0 {
+		input.AdditionalModelRequestFields = document.NewLazyDocument(map[string]any{
+			"thinking": map[string]any{
+				"type":          "enabled",
+				"budget_tokens": o.ThinkingBudget,
+			},
+		})
+	}
 
 	var result *ConverseResult
 	err := c.retryThrottled(ctx, func() error {

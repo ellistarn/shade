@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -122,6 +123,7 @@ type progress struct {
 	total   int
 	counter *atomic.Int32
 	done    chan struct{}
+	exited  sync.WaitGroup
 	tty     bool
 }
 
@@ -135,12 +137,14 @@ func startProgress(total int, counter *atomic.Int32) *progress {
 		tty:     isTTY(),
 	}
 	if p.tty && total > 0 {
+		p.exited.Add(1)
 		go p.run()
 	}
 	return p
 }
 
 func (p *progress) run() {
+	defer p.exited.Done()
 	ticker := time.NewTicker(tickRate)
 	defer ticker.Stop()
 	for {
@@ -159,8 +163,7 @@ func (p *progress) run() {
 func (p *progress) stop() {
 	close(p.done)
 	if p.tty && p.total > 0 {
-		// Small sleep to let the goroutine exit cleanly
-		time.Sleep(10 * time.Millisecond)
+		p.exited.Wait()
 		fmt.Fprintf(os.Stderr, "\r%s\r", clearLine)
 	}
 }

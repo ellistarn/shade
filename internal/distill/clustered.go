@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/ellistarn/muse/internal/conversation"
-	"github.com/ellistarn/muse/internal/embedding"
 	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/storage"
 	"github.com/ellistarn/muse/prompts"
@@ -39,14 +38,14 @@ type ClusteredOptions struct {
 // RunClustered executes the full clustering distillation pipeline:
 // observe → classify → group → sample → synthesize → merge → diff.
 //
-// The embedder is wired but not currently used — label-match grouping replaced
-// HDBSCAN vector clustering. Kept in the signature so we can swap strategies
-// without replumbing callers.
+// Grouping is by exact label match — label convergence in the classifier
+// produces a shared vocabulary, making embedding-based clustering unnecessary.
+// See https://github.com/ellistarn/muse/issues/81 for the known cache
+// correctness gap in classification fingerprinting.
 func RunClustered(
 	ctx context.Context,
 	store storage.Store,
 	observeLLM, classifyLLM, synthesizeLLM, mergeLLM LLM,
-	embedder embedding.Embedder,
 	opts ClusteredOptions,
 ) (*Result, error) {
 	artifacts := NewArtifactStore(opts.ArtifactDir)
@@ -203,7 +202,10 @@ func RunClustered(
 		mergeInput += fmt.Sprintf(" + %d outliers", len(noiseObs))
 	}
 	logBefore("merge", "%s", mergeInput)
-	previousMuse, _ := store.GetMuse(ctx)
+	previousMuse, err := store.GetMuse(ctx)
+	if err != nil && !storage.IsNotFound(err) {
+		return nil, fmt.Errorf("get previous muse: %w", err)
+	}
 	muse, timestamp, mergeUsage, err := runMerge(ctx, mergeLLM, store, summaries, noiseObs)
 	if err != nil {
 		return nil, fmt.Errorf("merge: %w", err)
@@ -348,6 +350,9 @@ func runObserve(
 	var pending []storage.SessionEntry
 	var pruned int
 	for _, e := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		session, err := store.GetSession(ctx, e.Source, e.SessionID)
 		if err != nil {
 			return nil, fmt.Errorf("get session %s/%s: %w", e.Source, e.SessionID, err)
@@ -375,6 +380,11 @@ func runObserve(
 	var firstErr error
 	var usage inference.Usage
 	var dataSize int
+
+	// errCtx is cancelled when the first error occurs, preventing remaining
+	// goroutines from starting expensive LLM calls.
+	errCtx, cancelOnErr := context.WithCancel(ctx)
+	defer cancelOnErr()
 
 	// Print discover line now that we know totals
 	discoverLine := logStage("discover", "%d sources → %d conversations %s",
@@ -412,12 +422,19 @@ func runObserve(
 				sem <- struct{}{}
 				defer func() { <-sem }()
 
+				// Check if another goroutine already failed
+				if errCtx.Err() != nil {
+					counter.Add(1)
+					return
+				}
+
 				session, err := store.GetSession(ctx, entry.Source, entry.SessionID)
 				if err != nil {
 					counter.Add(1)
 					mu.Lock()
 					if firstErr == nil {
 						firstErr = fmt.Errorf("load session %s: %w", entry.Key, err)
+						cancelOnErr()
 					}
 					mu.Unlock()
 					return
@@ -432,6 +449,7 @@ func runObserve(
 					mu.Lock()
 					if firstErr == nil {
 						firstErr = fmt.Errorf("observe %s: %w", entry.Key, err)
+						cancelOnErr()
 					}
 					mu.Unlock()
 					return
@@ -446,6 +464,7 @@ func runObserve(
 					mu.Lock()
 					if firstErr == nil {
 						firstErr = fmt.Errorf("save observations for %s: %w", entry.Key, err)
+						cancelOnErr()
 					}
 					mu.Unlock()
 					return
@@ -458,6 +477,7 @@ func runObserve(
 						mu.Lock()
 						if firstErr == nil {
 							firstErr = fmt.Errorf("save legacy observation for %s: %w", entry.Key, err)
+							cancelOnErr()
 						}
 						mu.Unlock()
 						return
@@ -585,40 +605,7 @@ func extractObservations(ctx context.Context, client LLM, session *conversation.
 // full assistant text.
 const maxAssistantChars = 500
 
-// buildRawConversation formats turns into chunked text without any compression.
-// This preserves the full conversation for extraction when it fits in the context window.
-func buildRawConversation(turns []turn) []string {
-	var chunks []string
-	var b strings.Builder
-
-	for _, t := range turns {
-		var entry string
-		if t.assistantContent != "" {
-			entry = fmt.Sprintf("[assistant]: %s\n[human]: %s\n\n", t.assistantContent, t.humanContent)
-		} else {
-			entry = fmt.Sprintf("[human]: %s\n\n", t.humanContent)
-		}
-
-		if b.Len()+len(entry) > maxChunkChars && b.Len() > 0 {
-			chunks = append(chunks, b.String())
-			b.Reset()
-		}
-		b.WriteString(entry)
-	}
-	if b.Len() > 0 {
-		chunks = append(chunks, b.String())
-	}
-	return chunks
-}
-
-// totalChars returns the total character count across all chunks.
-func totalChars(chunks []string) int {
-	n := 0
-	for _, c := range chunks {
-		n += len(c)
-	}
-	return n
-}
+// buildRawConversation was removed — mechanical compression is always used.
 
 // compressConversation mechanically compresses turns for extraction: strips
 // code blocks, collapses tool output to [tool: name] markers, and truncates
@@ -799,8 +786,7 @@ func parseObservationItems(text string) []string {
 }
 
 // observationEntry flattens source/session/index into a single record
-
-// stripListPrefix removes a leading bullet or numbered-list marker from a line.
+// so downstream stages can track observations across conversations. removes a leading bullet or numbered-list marker from a line.
 // Handles "- ...", "• ...", "* ...", "1. ...", "12. ...", etc.
 func stripListPrefix(s string) string {
 	// Bullet markers: "- ", "• ", "* "
@@ -1000,6 +986,9 @@ func runClassify(
 
 	// Process sessions sequentially for label convergence.
 	for key, entries := range groups {
+		if err := ctx.Err(); err != nil {
+			return inference.Usage{}, HitMiss{}, 0, err
+		}
 		// Check cache
 		var obsTexts []string
 		for _, e := range entries {
@@ -1080,102 +1069,6 @@ func runClassify(
 	return totalUsage, HitMiss{Hit: int(hits.Load()), Miss: int(misses.Load())}, len(labels.list()), nil
 }
 
-// ── EMBED ───────────────────────────────────────────────────────────────
-
-// runEmbed computes embeddings for all classifications.
-func runEmbed(
-	ctx context.Context,
-	artifacts *ArtifactStore,
-	embedder embedding.Embedder,
-	allObs []observationEntry,
-	verbose bool,
-) (HitMiss, error) {
-	model := embedder.Model()
-	start := time.Now()
-
-	// Group by session
-	type sessionKey struct{ source, sessionID string }
-	groups := map[sessionKey]bool{}
-	for _, obs := range allObs {
-		groups[sessionKey{obs.Source, obs.SessionID}] = true
-	}
-
-	var hits, misses atomic.Int32
-	var completed atomic.Int32
-	total := len(groups)
-
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 50)
-
-	for key := range groups {
-		wg.Add(1)
-		go func(key sessionKey) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			cls, err := artifacts.GetClassifications(key.source, key.sessionID)
-			if err != nil || len(cls.Items) == 0 {
-				completed.Add(1)
-				return
-			}
-
-			// Fingerprint: hash of classification content + model
-			var clsTexts []string
-			for _, c := range cls.Items {
-				clsTexts = append(clsTexts, c.Classification)
-			}
-			fp := Fingerprint(append(clsTexts, model)...)
-
-			existing, err := artifacts.GetEmbeddings(key.source, key.sessionID)
-			if err == nil && existing.Fingerprint == fp {
-				hits.Add(1)
-				n := completed.Add(1)
-				if verbose {
-					fmt.Fprintf(os.Stderr, "  [%d/%d] Cached embeddings for %s/%s\n", n, total, key.source, key.sessionID)
-				}
-				return
-			}
-			misses.Add(1)
-
-			// Compute embeddings
-			vectors, err := embedder.Embed(ctx, clsTexts)
-			if err != nil {
-				n := completed.Add(1)
-				if verbose {
-					fmt.Fprintf(os.Stderr, "  [%d/%d] Error embedding %s/%s: %v\n", n, total, key.source, key.sessionID, err)
-				}
-				return
-			}
-
-			var items []Embedding
-			for i, c := range cls.Items {
-				items = append(items, Embedding{
-					Classification: c.Classification,
-					Vector:         vectors[i],
-				})
-			}
-
-			emb := &Embeddings{
-				Fingerprint: fp,
-				Items:       items,
-			}
-			artifacts.PutEmbeddings(key.source, key.sessionID, emb)
-
-			n := completed.Add(1)
-			if verbose {
-				fmt.Fprintf(os.Stderr, "  [%d/%d] Embedded %s/%s (%d vectors)\n",
-					n, total, key.source, key.sessionID, len(items))
-			}
-		}(key)
-	}
-	wg.Wait()
-
-	fmt.Fprintf(os.Stderr, "Embedded %d sessions (%s)\n",
-		total, time.Since(start).Round(time.Millisecond))
-	return HitMiss{Hit: int(hits.Load()), Miss: int(misses.Load())}, nil
-}
-
 // ── GROUP ───────────────────────────────────────────────────────────────
 
 type clusterResult struct {
@@ -1183,8 +1076,8 @@ type clusterResult struct {
 	ObservationIdxs []int // indices into the flat allObs slice
 }
 
-// runGroup collects all embedding vectors and runs HDBSCAN clustering.
-// Returns clusters (groups of observation indices) and noise observations.
+// runGroup groups observations by exact classification label match.
+// Labels with minClusterSize+ observations form clusters; the rest is noise.
 func runGroup(artifacts *ArtifactStore, allObs []observationEntry) ([]clusterResult, []string, error) {
 	// Load classifications to get label for each observation
 	type sessionKey struct{ source, sessionID string }
@@ -1320,6 +1213,10 @@ func runSynthesize(
 	errs := make([]error, len(samples))
 	usages := make([]inference.Usage, len(samples))
 
+	// errCtx is cancelled on first error to short-circuit remaining goroutines.
+	errCtx, cancelOnErr := context.WithCancel(ctx)
+	defer cancelOnErr()
+
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 50)
 
@@ -1330,15 +1227,25 @@ func runSynthesize(
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			input := fmt.Sprintf("Cluster theme: %s\n\nObservations:\n", sample.Theme)
-			for _, obs := range sample.Observations {
-				input += "\n---\n" + obs
+			if errCtx.Err() != nil {
+				counter.Add(1)
+				return
 			}
 
-			resp, usage, err := llm.Converse(ctx, prompts.Summarize, input, inference.WithMaxTokens(4096))
+			var input strings.Builder
+			fmt.Fprintf(&input, "Cluster theme: %s\n\nObservations:\n", sample.Theme)
+			for _, obs := range sample.Observations {
+				input.WriteString("\n---\n")
+				input.WriteString(obs)
+			}
+
+			resp, usage, err := llm.Converse(ctx, prompts.Summarize, input.String(), inference.WithMaxTokens(4096))
 			summaries[i] = strings.TrimSpace(resp)
 			usages[i] = usage
-			errs[i] = err
+			if err != nil {
+				errs[i] = err
+				cancelOnErr()
+			}
 			counter.Add(1)
 		}(i, sample)
 	}

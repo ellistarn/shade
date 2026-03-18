@@ -50,7 +50,6 @@ type Result struct {
 type CacheStats struct {
 	Observe  HitMiss
 	Classify HitMiss
-	Embed    HitMiss
 }
 
 // HitMiss tracks cache hit and miss counts.
