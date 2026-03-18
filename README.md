@@ -7,7 +7,7 @@ perspective without pulling you into the loop.
 ## Install
 
 ```
-go install github.com/ellistarn/muse/cmd/muse@latest
+go install github.com/ellistarn/muse@latest
 ```
 
 ## Getting Started
