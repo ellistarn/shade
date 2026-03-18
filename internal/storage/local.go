@@ -255,6 +255,72 @@ func (l *LocalStore) GetObservation(_ context.Context, conversationKey string) (
 	return string(data), nil
 }
 
+// PutData writes raw bytes at the given key path using atomic write-to-temp + rename.
+func (l *LocalStore) PutData(_ context.Context, key string, data []byte) error {
+	path := filepath.Join(l.root, filepath.FromSlash(key))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory for %s: %w", key, err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write %s: %w", key, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to rename %s: %w", key, err)
+	}
+	return nil
+}
+
+// GetData reads raw bytes at the given key path.
+func (l *LocalStore) GetData(_ context.Context, key string) ([]byte, error) {
+	path := filepath.Join(l.root, filepath.FromSlash(key))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, &NotFoundError{Key: key}
+		}
+		return nil, fmt.Errorf("failed to read %s: %w", key, err)
+	}
+	return data, nil
+}
+
+// ListData returns all keys under the given prefix.
+func (l *LocalStore) ListData(_ context.Context, prefix string) ([]string, error) {
+	dir := filepath.Join(l.root, filepath.FromSlash(prefix))
+	var keys []string
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return fs.SkipAll
+			}
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(l.root, path)
+		if err != nil {
+			return nil
+		}
+		keys = append(keys, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list %s: %w", prefix, err)
+	}
+	return keys, nil
+}
+
+// DeleteData removes all files under the given prefix.
+func (l *LocalStore) DeleteData(_ context.Context, prefix string) error {
+	path := filepath.Join(l.root, filepath.FromSlash(prefix))
+	if err := os.RemoveAll(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete %s: %w", prefix, err)
+	}
+	return nil
+}
+
 // DeletePrefix removes all files under the given prefix.
 func (l *LocalStore) DeletePrefix(_ context.Context, prefix string) error {
 	path := filepath.Join(l.root, filepath.FromSlash(prefix))

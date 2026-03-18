@@ -99,7 +99,7 @@ func TestMapReduce_Limit(t *testing.T) {
 		LearnResponse:   "## Test\n\nContent here.",
 	}
 
-	result, err := distill.Run(context.Background(), store, llm, llm, distill.Options{Limit: 2})
+	result, err := distill.Run(context.Background(), store, llm, llm, distill.Options{BaseOptions: distill.BaseOptions{Limit: 2}})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestMapReduce_LimitIncludesPreviousObservations(t *testing.T) {
 	}
 
 	// First run: limit to 2
-	result, err := distill.Run(context.Background(), store, llm, llm, distill.Options{Limit: 2})
+	result, err := distill.Run(context.Background(), store, llm, llm, distill.Options{BaseOptions: distill.BaseOptions{Limit: 2}})
 	if err != nil {
 		t.Fatalf("first Run() error: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestMapReduce_LimitIncludesPreviousObservations(t *testing.T) {
 
 	// Second run: limit to 2 again, should observe 2 more and learn from all 4
 	llm.Calls = nil
-	result, err = distill.Run(context.Background(), store, llm, llm, distill.Options{Limit: 2})
+	result, err = distill.Run(context.Background(), store, llm, llm, distill.Options{BaseOptions: distill.BaseOptions{Limit: 2}})
 	if err != nil {
 		t.Fatalf("second Run() error: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestMapReduce_Reobserve(t *testing.T) {
 
 	// With Reobserve, it should process again
 	llm.Calls = nil
-	result, err := distill.Run(context.Background(), store, llm, llm, distill.Options{Reobserve: true})
+	result, err := distill.Run(context.Background(), store, llm, llm, distill.Options{BaseOptions: distill.BaseOptions{Reobserve: true}})
 	if err != nil {
 		t.Fatalf("reprocess Run() error: %v", err)
 	}
@@ -259,12 +259,11 @@ func TestMapReduce_IncrementalPersist(t *testing.T) {
 func TestClustered_EndToEnd(t *testing.T) {
 	store := twoConversationStore()
 	mock := &clusterMockLLM{}
-	root := t.TempDir()
 
 	result, err := distill.RunClustered(
 		context.Background(), store,
 		mock, mock, mock, mock,
-		distill.ClusteredOptions{ArtifactDir: root, Limit: 100},
+		distill.ClusteredOptions{BaseOptions: distill.BaseOptions{Limit: 100}},
 	)
 	if err != nil {
 		t.Fatalf("RunClustered: %v", err)
@@ -280,18 +279,17 @@ func TestClustered_EndToEnd(t *testing.T) {
 		t.Error("expected non-zero input tokens")
 	}
 
-	// Verify artifacts
-	artifacts := distill.NewArtifactStore(root)
-	obsList, err := artifacts.ListObservations()
+	// Verify artifacts via Store
+	obsList, err := distill.ListDistillObservations(context.Background(), store)
 	if err != nil {
-		t.Fatalf("ListObservations: %v", err)
+		t.Fatalf("ListDistillObservations: %v", err)
 	}
 	if len(obsList) == 0 {
 		t.Error("expected observation artifacts")
 	}
-	clsList, err := artifacts.ListLabels()
+	clsList, err := distill.ListDistillLabels(context.Background(), store)
 	if err != nil {
-		t.Fatalf("ListLabels: %v", err)
+		t.Fatalf("ListDistillLabels: %v", err)
 	}
 	if len(clsList) == 0 {
 		t.Error("expected label artifacts")
@@ -308,8 +306,7 @@ func TestClustered_CacheHit(t *testing.T) {
 	})
 
 	mock := &clusterMockLLM{}
-	root := t.TempDir()
-	opts := distill.ClusteredOptions{ArtifactDir: root, Limit: 100}
+	opts := distill.ClusteredOptions{BaseOptions: distill.BaseOptions{Limit: 100}}
 
 	// First run
 	_, err := distill.RunClustered(context.Background(), store, mock, mock, mock, mock, opts)
@@ -332,12 +329,11 @@ func TestClustered_CacheHit(t *testing.T) {
 func TestClustered_NoConversations(t *testing.T) {
 	store := testutil.NewConversationStore()
 	mock := &clusterMockLLM{}
-	root := t.TempDir()
 
 	result, err := distill.RunClustered(
 		context.Background(), store,
 		mock, mock, mock, mock,
-		distill.ClusteredOptions{ArtifactDir: root, Limit: 100},
+		distill.ClusteredOptions{BaseOptions: distill.BaseOptions{Limit: 100}},
 	)
 	if err != nil {
 		t.Fatalf("RunClustered: %v", err)
@@ -360,12 +356,11 @@ func TestClustered_ObserveError(t *testing.T) {
 	})
 
 	mock := &clusterMockLLM{failOnExtract: true}
-	root := t.TempDir()
 
 	_, err := distill.RunClustered(
 		context.Background(), store,
 		mock, mock, mock, mock,
-		distill.ClusteredOptions{ArtifactDir: root, Limit: 100},
+		distill.ClusteredOptions{BaseOptions: distill.BaseOptions{Limit: 100}},
 	)
 	if err == nil {
 		t.Fatal("expected error from LLM failure, got nil")
@@ -384,12 +379,11 @@ func TestClustered_Limit(t *testing.T) {
 	}
 
 	mock := &clusterMockLLM{}
-	root := t.TempDir()
 
 	result, err := distill.RunClustered(
 		context.Background(), store,
 		mock, mock, mock, mock,
-		distill.ClusteredOptions{ArtifactDir: root, Limit: 2},
+		distill.ClusteredOptions{BaseOptions: distill.BaseOptions{Limit: 2}},
 	)
 	if err != nil {
 		t.Fatalf("RunClustered: %v", err)

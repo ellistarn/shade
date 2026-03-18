@@ -23,12 +23,8 @@ const minClusterSize = 3
 
 // ClusteredOptions configures a clustered distill run.
 type ClusteredOptions struct {
-	Reobserve   bool
-	Relabel     bool
-	Limit       int
-	Sources     []string
-	ArtifactDir string // root for artifact storage (e.g. ~/.muse)
-	Verbose     bool   // per-item progress logging
+	BaseOptions
+	Relabel bool // force re-label all observations
 
 	// Upload results from the load phase, folded into the discover line.
 	Uploaded    int // new conversations ingested this run
@@ -46,7 +42,6 @@ func RunClustered(
 	observeLLM, labelLLM, summarizeLLM, composeLLM LLM,
 	opts ClusteredOptions,
 ) (*Result, error) {
-	artifacts := NewArtifactStore(opts.ArtifactDir)
 	pipelineStart := time.Now()
 	var totalUsage inference.Usage
 	var stages []StageStats
@@ -54,7 +49,7 @@ func RunClustered(
 	// ── OBSERVE ─────────────────────────────────────────────────────────
 	var observeCounter atomic.Int32
 	observeStart := time.Now()
-	observeResult, err := runObserve(ctx, store, artifacts, observeLLM, opts, &observeCounter)
+	observeResult, err := runObserve(ctx, store, observeLLM, opts, &observeCounter)
 	if err != nil {
 		return nil, fmt.Errorf("observe: %w", err)
 	}
@@ -68,7 +63,7 @@ func RunClustered(
 	})
 
 	// Load all observations
-	allObs, err := loadAllStructuredObservations(artifacts)
+	allObs, err := loadAllStructuredObservations(ctx, store)
 	if err != nil {
 		return nil, fmt.Errorf("load observations: %w", err)
 	}
@@ -111,7 +106,7 @@ func RunClustered(
 	}
 	logBefore("label", "%d observations%s", len(allObs), labelBeforeNote)
 	prog := startProgress(labelTotal, &labelCounter)
-	labelUsage, labelCache, numLabels, err := runLabel(ctx, artifacts, labelLLM, allObs, opts.Relabel, opts.Verbose, &labelCounter)
+	labelUsage, labelCache, numLabels, err := runLabel(ctx, store, labelLLM, allObs, opts.Relabel, opts.Verbose, &labelCounter)
 	prog.stop()
 	if err != nil {
 		return nil, fmt.Errorf("label: %w", err)
@@ -133,7 +128,7 @@ func RunClustered(
 	// ── NORMALIZE ──────────────────────────────────────────────────────
 	normalizeStart := time.Now()
 	logBefore("normalize", "%d labels", numLabels)
-	normalizeUsage, err := runNormalize(ctx, artifacts, labelLLM, opts.Verbose)
+	normalizeUsage, err := runNormalize(ctx, store, labelLLM, opts.Verbose)
 	if err != nil {
 		return nil, fmt.Errorf("normalize: %w", err)
 	}
@@ -148,7 +143,7 @@ func RunClustered(
 
 	// ── GROUP ───────────────────────────────────────────────────────────
 	groupStart := time.Now()
-	clusters, noiseObs, err := runGroup(artifacts, allObs)
+	clusters, noiseObs, err := runGroup(ctx, store, allObs)
 	if err != nil {
 		return nil, fmt.Errorf("group: %w", err)
 	}
@@ -163,7 +158,7 @@ func RunClustered(
 
 	// ── SAMPLE ──────────────────────────────────────────────────────────
 	sampleStart := time.Now()
-	samples := runSampleWithObs(clusters, allObs, artifacts)
+	samples := runSampleWithObs(ctx, clusters, allObs, store)
 	totalSampled := 0
 	sampleDataSize := 0
 	for _, s := range samples {
@@ -305,7 +300,6 @@ type observeResult struct {
 func runObserve(
 	ctx context.Context,
 	store storage.Store,
-	artifacts *ArtifactStore,
 	llm LLM,
 	opts ClusteredOptions,
 	counter *atomic.Int32,
@@ -319,13 +313,13 @@ func runObserve(
 	if opts.Reobserve {
 		if len(opts.Sources) > 0 {
 			for _, src := range opts.Sources {
-				artifacts.DeleteObservationsForSource(src)
+				DeleteDistillObservationsForSource(ctx, store, src)
 				if opts.Verbose {
 					fmt.Fprintf(os.Stderr, "  Cleared observations for %s\n", src)
 				}
 			}
 		} else {
-			artifacts.DeleteObservations()
+			DeleteDistillObservations(ctx, store)
 			fmt.Fprintln(os.Stderr, "  Cleared all observations")
 		}
 	}
@@ -369,7 +363,7 @@ func runObserve(
 		}
 		fp := Fingerprint(e.LastModified.Format(time.RFC3339Nano), promptHash)
 
-		existing, err := artifacts.GetObservations(e.Source, e.ConversationID)
+		existing, err := GetObservations(ctx, store, e.Source, e.ConversationID)
 		if err == nil && existing.Fingerprint == fp {
 			pruned++
 			continue
@@ -470,7 +464,7 @@ func runObserve(
 					Fingerprint: fp,
 					Items:       items,
 				}
-				if err := artifacts.PutObservations(entry.Source, entry.ConversationID, obs); err != nil {
+				if err := PutObservations(ctx, store, entry.Source, entry.ConversationID, obs); err != nil {
 					mu.Lock()
 					if firstErr == nil {
 						firstErr = fmt.Errorf("save observations for %s: %w", entry.Key, err)
@@ -814,8 +808,8 @@ type observationEntry struct {
 
 // loadAllStructuredObservations loads all observation artifacts and returns
 // a flat list of observation entries, loading conversations in parallel.
-func loadAllStructuredObservations(artifacts *ArtifactStore) ([]observationEntry, error) {
-	convList, err := artifacts.ListObservations()
+func loadAllStructuredObservations(ctx context.Context, store storage.Store) ([]observationEntry, error) {
+	convList, err := ListDistillObservations(ctx, store)
 	if err != nil {
 		return nil, err
 	}
@@ -835,7 +829,7 @@ func loadAllStructuredObservations(artifacts *ArtifactStore) ([]observationEntry
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			obs, err := artifacts.GetObservations(ss.Source, ss.ConversationID)
+			obs, err := GetObservations(ctx, store, ss.Source, ss.ConversationID)
 			if err != nil {
 				results[i] = result{err: fmt.Errorf("get observations %s/%s: %w", ss.Source, ss.ConversationID, err)}
 				return
@@ -963,7 +957,7 @@ func parseLabelResponse(resp string, count int) []string {
 // A normalization step downstream merges synonymous labels.
 func runLabel(
 	ctx context.Context,
-	artifacts *ArtifactStore,
+	store storage.Store,
 	llm LLM,
 	allObs []observationEntry,
 	forceRelabel bool,
@@ -971,19 +965,19 @@ func runLabel(
 	counter *atomic.Int32,
 ) (inference.Usage, HitMiss, int, error) {
 	if forceRelabel {
-		artifacts.DeleteLabels()
+		DeleteDistillLabels(ctx, store)
 	}
 
 	labelPromptHash := Fingerprint(prompts.Label)
 
 	// Seed the label set from cached labels
 	labels := newLabelSet()
-	existingLabels, err := artifacts.ListLabels()
+	existingLabels, err := ListDistillLabels(ctx, store)
 	if err != nil {
 		return inference.Usage{}, HitMiss{}, 0, fmt.Errorf("list labels: %w", err)
 	}
 	for _, ss := range existingLabels {
-		lbl, err := artifacts.GetLabels(ss.Source, ss.ConversationID)
+		lbl, err := GetLabels(ctx, store, ss.Source, ss.ConversationID)
 		if err != nil {
 			return inference.Usage{}, HitMiss{}, 0, fmt.Errorf("get labels %s/%s: %w", ss.Source, ss.ConversationID, err)
 		}
@@ -1033,7 +1027,7 @@ func runLabel(
 			}
 			fp := Fingerprint(append(obsTexts, labelPromptHash)...)
 
-			existing, err := artifacts.GetLabels(key.source, key.conversationID)
+			existing, err := GetLabels(ctx, store, key.source, key.conversationID)
 			if err == nil && existing.Fingerprint == fp {
 				hits.Add(1)
 				for _, item := range existing.Items {
@@ -1096,7 +1090,7 @@ func runLabel(
 				Fingerprint: fp,
 				Items:       items,
 			}
-			if err := artifacts.PutLabels(key.source, key.conversationID, lblResult); err != nil {
+			if err := PutLabels(ctx, store, key.source, key.conversationID, lblResult); err != nil {
 				mu.Lock()
 				if firstErr == nil {
 					firstErr = fmt.Errorf("save labels for %s/%s: %w", key.source, key.conversationID, err)
@@ -1133,19 +1127,19 @@ func runLabel(
 // the set of labels changes.
 func runNormalize(
 	ctx context.Context,
-	artifacts *ArtifactStore,
+	store storage.Store,
 	llm LLM,
 	verbose bool,
 ) (inference.Usage, error) {
 	// Collect all unique labels
-	convList, err := artifacts.ListLabels()
+	convList, err := ListDistillLabels(ctx, store)
 	if err != nil {
 		return inference.Usage{}, fmt.Errorf("list labels: %w", err)
 	}
 
 	uniqueLabels := map[string]bool{}
 	for _, ss := range convList {
-		lbl, err := artifacts.GetLabels(ss.Source, ss.ConversationID)
+		lbl, err := GetLabels(ctx, store, ss.Source, ss.ConversationID)
 		if err != nil {
 			return inference.Usage{}, fmt.Errorf("get labels %s/%s: %w", ss.Source, ss.ConversationID, err)
 		}
@@ -1170,11 +1164,11 @@ func runNormalize(
 	fp := Fingerprint(append(sorted, Fingerprint(prompts.Normalize))...)
 
 	// Check cache
-	existing, err := artifacts.GetNormalization()
+	existing, err := GetNormalization(ctx, store)
 	if err == nil && existing.Fingerprint == fp {
 		// Cache hit — still need to apply mapping to ensure consistency
 		if len(existing.Mapping) > 0 {
-			applyNormalization(artifacts, convList, existing.Mapping)
+			applyNormalization(ctx, store, convList, existing.Mapping)
 		}
 		return inference.Usage{}, nil
 	}
@@ -1207,13 +1201,13 @@ func runNormalize(
 		Fingerprint: fp,
 		Mapping:     mapping,
 	}
-	if err := artifacts.PutNormalization(norm); err != nil {
+	if err := PutNormalization(ctx, store, norm); err != nil {
 		return usage, fmt.Errorf("save normalization: %w", err)
 	}
 
 	// Apply mapping to label artifacts
 	if len(mapping) > 0 {
-		applyNormalization(artifacts, convList, mapping)
+		applyNormalization(ctx, store, convList, mapping)
 	}
 
 	return usage, nil
@@ -1251,9 +1245,9 @@ func parseNormalizationResponse(resp string) map[string]string {
 }
 
 // applyNormalization rewrites label artifacts, replacing labels according to the mapping.
-func applyNormalization(artifacts *ArtifactStore, convList []SourceConversation, mapping map[string]string) {
+func applyNormalization(ctx context.Context, store storage.Store, convList []SourceConversation, mapping map[string]string) {
 	for _, ss := range convList {
-		lbl, err := artifacts.GetLabels(ss.Source, ss.ConversationID)
+		lbl, err := GetLabels(ctx, store, ss.Source, ss.ConversationID)
 		if err != nil {
 			continue
 		}
@@ -1265,7 +1259,7 @@ func applyNormalization(artifacts *ArtifactStore, convList []SourceConversation,
 			}
 		}
 		if changed {
-			artifacts.PutLabels(ss.Source, ss.ConversationID, lbl)
+			PutLabels(ctx, store, ss.Source, ss.ConversationID, lbl)
 		}
 	}
 }
@@ -1279,16 +1273,16 @@ type clusterResult struct {
 
 // runGroup groups observations by exact label match.
 // Labels with minClusterSize+ observations form clusters; the rest is noise.
-func runGroup(artifacts *ArtifactStore, allObs []observationEntry) ([]clusterResult, []string, error) {
+func runGroup(ctx context.Context, store storage.Store, allObs []observationEntry) ([]clusterResult, []string, error) {
 	// Load labels to get label for each observation
 	type conversationKey struct{ source, conversationID string }
 	lblByConversation := map[conversationKey]*Labels{}
-	convList, err := artifacts.ListLabels()
+	convList, err := ListDistillLabels(ctx, store)
 	if err != nil {
 		return nil, nil, err
 	}
 	for _, ss := range convList {
-		lbl, err := artifacts.GetLabels(ss.Source, ss.ConversationID)
+		lbl, err := GetLabels(ctx, store, ss.Source, ss.ConversationID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("get labels %s/%s: %w", ss.Source, ss.ConversationID, err)
 		}
@@ -1358,7 +1352,7 @@ type clusterSample struct {
 }
 
 // runSampleWithObs selects representative observations from each cluster.
-func runSampleWithObs(clusters []clusterResult, allObs []observationEntry, artifacts *ArtifactStore) []clusterSample {
+func runSampleWithObs(ctx context.Context, clusters []clusterResult, allObs []observationEntry, store storage.Store) []clusterSample {
 	var samples []clusterSample
 	for _, cl := range clusters {
 		indices := cl.ObservationIdxs
@@ -1386,7 +1380,7 @@ func runSampleWithObs(clusters []clusterResult, allObs []observationEntry, artif
 		theme := ""
 		if len(indices) > 0 {
 			obs := allObs[indices[0]]
-			lbl, err := artifacts.GetLabels(obs.Source, obs.ConversationID)
+			lbl, err := GetLabels(ctx, store, obs.Source, obs.ConversationID)
 			if err == nil && obs.Index < len(lbl.Items) {
 				theme = lbl.Items[obs.Index].Label
 			}

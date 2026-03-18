@@ -30,7 +30,7 @@ func TestRunDistill_PropagatesRunError(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	err := runDistill(ctx, &stdout, &stderr, store, &testutil.MockLLM{}, &testutil.MockLLM{}, &testutil.MockLLM{}, distill.Options{Limit: 100})
+	err := runDistill(ctx, &stdout, &stderr, store, &testutil.MockLLM{}, &testutil.MockLLM{}, &testutil.MockLLM{}, distill.Options{BaseOptions: distill.BaseOptions{Limit: 100}})
 	if err == nil {
 		t.Fatal("expected error from failing store, got nil")
 	}
@@ -70,7 +70,7 @@ func TestRunDistill_SuccessfulRun(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	err := runDistill(ctx, &stdout, &stderr, store, mockLLM, mockLLM, mockLLM, distill.Options{Limit: 100})
+	err := runDistill(ctx, &stdout, &stderr, store, mockLLM, mockLLM, mockLLM, distill.Options{BaseOptions: distill.BaseOptions{Limit: 100}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -133,3 +133,9 @@ func (s *failingStore) GetObservation(_ context.Context, _ string) (string, erro
 }
 func (s *failingStore) PutObservation(_ context.Context, _, _ string) error { return s.err }
 func (s *failingStore) DeletePrefix(_ context.Context, _ string) error      { return s.err }
+func (s *failingStore) PutData(_ context.Context, _ string, _ []byte) error { return s.err }
+func (s *failingStore) GetData(_ context.Context, _ string) ([]byte, error) { return nil, s.err }
+func (s *failingStore) ListData(_ context.Context, _ string) ([]string, error) {
+	return nil, s.err
+}
+func (s *failingStore) DeleteData(_ context.Context, _ string) error { return s.err }

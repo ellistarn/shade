@@ -36,6 +36,15 @@ type Store interface {
 	GetObservation(ctx context.Context, conversationKey string) (string, error)
 	PutObservation(ctx context.Context, key, content string) error
 
+	// Raw data — generic key/value operations for pipeline artifacts and
+	// strategy-specific state. Keys are slash-delimited paths (e.g.
+	// "distill/observations/opencode/ses_001.json"). Each strategy builds
+	// its own path conventions on top.
+	PutData(ctx context.Context, key string, data []byte) error
+	GetData(ctx context.Context, key string) ([]byte, error)
+	ListData(ctx context.Context, prefix string) ([]string, error) // returns keys under prefix
+	DeleteData(ctx context.Context, prefix string) error
+
 	// Maintenance
 	DeletePrefix(ctx context.Context, prefix string) error
 }

@@ -276,6 +276,62 @@ func (c *S3Store) GetObservation(ctx context.Context, conversationKey string) (s
 	return string(data), nil
 }
 
+// PutData writes raw bytes to S3 at the given key.
+func (c *S3Store) PutData(ctx context.Context, key string, data []byte) error {
+	contentType := "application/octet-stream"
+	_, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      &c.bucket,
+		Key:         &key,
+		Body:        bytes.NewReader(data),
+		ContentType: &contentType,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to put %s: %w", key, err)
+	}
+	return nil
+}
+
+// GetData reads raw bytes from S3 at the given key.
+func (c *S3Store) GetData(ctx context.Context, key string) ([]byte, error) {
+	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &c.bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		return nil, wrapS3NotFound(err, key)
+	}
+	defer out.Body.Close()
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", key, err)
+	}
+	return data, nil
+}
+
+// ListData returns all keys under the given S3 prefix.
+func (c *S3Store) ListData(ctx context.Context, prefix string) ([]string, error) {
+	var keys []string
+	paginator := s3.NewListObjectsV2Paginator(c.s3, &s3.ListObjectsV2Input{
+		Bucket: &c.bucket,
+		Prefix: &prefix,
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list %s: %w", prefix, err)
+		}
+		for _, obj := range page.Contents {
+			keys = append(keys, aws.ToString(obj.Key))
+		}
+	}
+	return keys, nil
+}
+
+// DeleteData removes all objects under the given S3 prefix.
+func (c *S3Store) DeleteData(ctx context.Context, prefix string) error {
+	return c.DeletePrefix(ctx, prefix)
+}
+
 // DeletePrefix removes all objects under a given S3 prefix.
 func (c *S3Store) DeletePrefix(ctx context.Context, prefix string) error {
 	paginator := s3.NewListObjectsV2Paginator(c.s3, &s3.ListObjectsV2Input{

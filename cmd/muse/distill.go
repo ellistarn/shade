@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -110,21 +109,19 @@ func runClusteredDistill(ctx context.Context, stdout io.Writer, store storage.St
 		return fmt.Errorf("opus client: %w", err)
 	}
 
-	// Determine artifact directory from store root
-	artifactDir := artifactDirFromStore(store)
-
 	result, err := distill.RunClustered(ctx, store,
 		sonnet, // observe
 		sonnet, // label
 		sonnet, // summarize
 		opus,   // compose — editorial judgment where Opus earns its keep
 		distill.ClusteredOptions{
-			Reobserve:   reobserve,
+			BaseOptions: distill.BaseOptions{
+				Reobserve: reobserve,
+				Limit:     limit,
+				Sources:   sources,
+				Verbose:   verbose,
+			},
 			Relabel:     relabel,
-			Limit:       limit,
-			Sources:     sources,
-			ArtifactDir: artifactDir,
-			Verbose:     verbose,
 			Uploaded:    uploaded,
 			UploadBytes: uploadBytes,
 		},
@@ -138,11 +135,13 @@ func runClusteredDistill(ctx context.Context, stdout io.Writer, store storage.St
 
 func runMapReduceDistill(ctx context.Context, stdout io.Writer, store storage.Store, sources []string, reobserve, learn bool, limit int) error {
 	opts := distill.Options{
-		Reobserve: reobserve,
-		Learn:     learn,
-		Limit:     limit,
-		Sources:   sources,
-		Verbose:   verbose,
+		BaseOptions: distill.BaseOptions{
+			Reobserve: reobserve,
+			Limit:     limit,
+			Sources:   sources,
+			Verbose:   verbose,
+		},
+		Learn: learn,
 	}
 
 	if learn {
@@ -248,16 +247,6 @@ func formatBytes(n int) string {
 		return fmt.Sprintf("%.1fKB", float64(n)/1024)
 	}
 	return fmt.Sprintf("%dB", n)
-}
-
-// artifactDirFromStore extracts the root directory from a store for artifact storage.
-func artifactDirFromStore(store storage.Store) string {
-	if ls, ok := store.(*storage.LocalStore); ok {
-		return ls.Root()
-	}
-	// Fallback to ~/.muse for S3 stores (artifacts are local cache)
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".muse")
 }
 
 // runDistill executes the map-reduce distill pipeline and prints results.

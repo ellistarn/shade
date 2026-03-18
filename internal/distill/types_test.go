@@ -1,9 +1,10 @@
 package distill
 
 import (
-	"os"
-	"path/filepath"
+	"context"
 	"testing"
+
+	"github.com/ellistarn/muse/internal/storage"
 )
 
 func TestFingerprint(t *testing.T) {
@@ -39,9 +40,9 @@ func TestFingerprint(t *testing.T) {
 	}
 }
 
-func TestArtifactStoreObservations(t *testing.T) {
-	root := t.TempDir()
-	store := NewArtifactStore(root)
+func TestArtifactObservations(t *testing.T) {
+	store := storage.NewLocalStoreWithRoot(t.TempDir())
+	ctx := context.Background()
 
 	obs := &Observations{
 		Fingerprint: "abc123",
@@ -49,18 +50,12 @@ func TestArtifactStoreObservations(t *testing.T) {
 	}
 
 	// Write
-	if err := store.PutObservations("opencode", "ses_001", obs); err != nil {
+	if err := PutObservations(ctx, store, "opencode", "ses_001", obs); err != nil {
 		t.Fatalf("PutObservations: %v", err)
 	}
 
-	// File exists
-	path := filepath.Join(root, "distill", "observations", "opencode", "ses_001.json")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected file at %s: %v", path, err)
-	}
-
 	// Read back
-	got, err := store.GetObservations("opencode", "ses_001")
+	got, err := GetObservations(ctx, store, "opencode", "ses_001")
 	if err != nil {
 		t.Fatalf("GetObservations: %v", err)
 	}
@@ -72,9 +67,9 @@ func TestArtifactStoreObservations(t *testing.T) {
 	}
 
 	// List
-	list, err := store.ListObservations()
+	list, err := ListDistillObservations(ctx, store)
 	if err != nil {
-		t.Fatalf("ListObservations: %v", err)
+		t.Fatalf("ListDistillObservations: %v", err)
 	}
 	if len(list) != 1 {
 		t.Fatalf("expected 1 observation, got %d", len(list))
@@ -84,9 +79,9 @@ func TestArtifactStoreObservations(t *testing.T) {
 	}
 }
 
-func TestArtifactStoreLabels(t *testing.T) {
-	root := t.TempDir()
-	store := NewArtifactStore(root)
+func TestArtifactLabels(t *testing.T) {
+	store := storage.NewLocalStoreWithRoot(t.TempDir())
+	ctx := context.Background()
 
 	lbl := &Labels{
 		Fingerprint: "def456",
@@ -96,11 +91,11 @@ func TestArtifactStoreLabels(t *testing.T) {
 		},
 	}
 
-	if err := store.PutLabels("kiro", "ses_002", lbl); err != nil {
+	if err := PutLabels(ctx, store, "kiro", "ses_002", lbl); err != nil {
 		t.Fatalf("PutLabels: %v", err)
 	}
 
-	got, err := store.GetLabels("kiro", "ses_002")
+	got, err := GetLabels(ctx, store, "kiro", "ses_002")
 	if err != nil {
 		t.Fatalf("GetLabels: %v", err)
 	}
@@ -112,60 +107,59 @@ func TestArtifactStoreLabels(t *testing.T) {
 	}
 }
 
-func TestArtifactStoreCacheMiss(t *testing.T) {
-	root := t.TempDir()
-	store := NewArtifactStore(root)
+func TestArtifactCacheMiss(t *testing.T) {
+	store := storage.NewLocalStoreWithRoot(t.TempDir())
+	ctx := context.Background()
 
-	// Not found returns os.ErrNotExist-wrapped error
-	_, err := store.GetObservations("opencode", "nonexistent")
+	_, err := GetObservations(ctx, store, "opencode", "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for missing artifact")
 	}
-	if !os.IsNotExist(err) {
-		t.Errorf("expected os.IsNotExist error, got: %v", err)
+	if !storage.IsNotFound(err) {
+		t.Errorf("expected NotFoundError, got: %v", err)
 	}
 }
 
-func TestArtifactStoreDelete(t *testing.T) {
-	root := t.TempDir()
-	store := NewArtifactStore(root)
+func TestArtifactDelete(t *testing.T) {
+	store := storage.NewLocalStoreWithRoot(t.TempDir())
+	ctx := context.Background()
 
 	// Create some artifacts
-	store.PutObservations("src1", "s1", &Observations{Items: []string{"a"}})
-	store.PutObservations("src2", "s2", &Observations{Items: []string{"b"}})
-	store.PutLabels("src1", "s1", &Labels{Items: []Label{{Observation: "a", Label: "x"}}})
+	PutObservations(ctx, store, "src1", "s1", &Observations{Items: []string{"a"}})
+	PutObservations(ctx, store, "src2", "s2", &Observations{Items: []string{"b"}})
+	PutLabels(ctx, store, "src1", "s1", &Labels{Items: []Label{{Observation: "a", Label: "x"}}})
 
 	// Delete observations for one source
-	if err := store.DeleteObservationsForSource("src1"); err != nil {
-		t.Fatalf("DeleteObservationsForSource: %v", err)
+	if err := DeleteDistillObservationsForSource(ctx, store, "src1"); err != nil {
+		t.Fatalf("DeleteDistillObservationsForSource: %v", err)
 	}
 
 	// src1 gone, src2 remains
-	list, _ := store.ListObservations()
+	list, _ := ListDistillObservations(ctx, store)
 	if len(list) != 1 || list[0].Source != "src2" {
 		t.Errorf("expected only src2: %+v", list)
 	}
 
 	// Labels untouched
-	lblList, _ := store.ListLabels()
+	lblList, _ := ListDistillLabels(ctx, store)
 	if len(lblList) != 1 {
 		t.Errorf("expected 1 label, got %d", len(lblList))
 	}
 
 	// Delete all observations
-	store.PutObservations("src3", "s3", &Observations{Items: []string{"c"}})
-	if err := store.DeleteObservations(); err != nil {
-		t.Fatalf("DeleteObservations: %v", err)
+	PutObservations(ctx, store, "src3", "s3", &Observations{Items: []string{"c"}})
+	if err := DeleteDistillObservations(ctx, store); err != nil {
+		t.Fatalf("DeleteDistillObservations: %v", err)
 	}
-	list, _ = store.ListObservations()
+	list, _ = ListDistillObservations(ctx, store)
 	if len(list) != 0 {
 		t.Errorf("expected 0 observations after delete all, got %d", len(list))
 	}
 }
 
 func TestFingerprintCacheValidation(t *testing.T) {
-	root := t.TempDir()
-	store := NewArtifactStore(root)
+	store := storage.NewLocalStoreWithRoot(t.TempDir())
+	ctx := context.Background()
 
 	// Simulate: conversation updated at t1 with prompt hash p1
 	fp1 := Fingerprint("2024-01-01T00:00:00Z", "prompt-hash-v1")
@@ -173,10 +167,10 @@ func TestFingerprintCacheValidation(t *testing.T) {
 		Fingerprint: fp1,
 		Items:       []string{"obs1"},
 	}
-	store.PutObservations("test", "s1", obs)
+	PutObservations(ctx, store, "test", "s1", obs)
 
 	// Read back and validate fingerprint matches (cache hit)
-	got, _ := store.GetObservations("test", "s1")
+	got, _ := GetObservations(ctx, store, "test", "s1")
 	currentFP := Fingerprint("2024-01-01T00:00:00Z", "prompt-hash-v1")
 	if got.Fingerprint != currentFP {
 		t.Error("expected cache hit")

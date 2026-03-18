@@ -31,6 +31,7 @@ type ConversationStore struct {
 	Data          map[string]*conversation.Conversation
 	Muse          string
 	Observations  map[string]string
+	RawData       map[string][]byte // generic key/value for PutData/GetData
 	Deleted       []string
 	Muses         map[string]string // timestamp -> content
 	mu            sync.Mutex
@@ -41,6 +42,7 @@ func NewConversationStore() *ConversationStore {
 	return &ConversationStore{
 		Data:         map[string]*conversation.Conversation{},
 		Observations: map[string]string{},
+		RawData:      map[string][]byte{},
 		Muses:        map[string]string{},
 	}
 }
@@ -154,6 +156,47 @@ func (s *ConversationStore) DeletePrefix(_ context.Context, prefix string) error
 	s.Deleted = append(s.Deleted, prefix)
 	if prefix == "observations/" {
 		s.Observations = map[string]string{}
+	}
+	return nil
+}
+
+func (s *ConversationStore) PutData(_ context.Context, key string, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.RawData[key] = append([]byte(nil), data...) // defensive copy
+	return nil
+}
+
+func (s *ConversationStore) GetData(_ context.Context, key string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, ok := s.RawData[key]
+	if !ok {
+		return nil, &storage.NotFoundError{Key: key}
+	}
+	return data, nil
+}
+
+func (s *ConversationStore) ListData(_ context.Context, prefix string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var keys []string
+	for k := range s.RawData {
+		if strings.HasPrefix(k, prefix) {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
+func (s *ConversationStore) DeleteData(_ context.Context, prefix string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k := range s.RawData {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.RawData, k)
+		}
 	}
 	return nil
 }

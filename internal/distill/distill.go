@@ -59,12 +59,10 @@ type HitMiss struct {
 	Miss int
 }
 
-// Options configures a distill run.
-type Options struct {
+// BaseOptions contains fields shared across all distill strategies.
+type BaseOptions struct {
 	// Reobserve ignores persisted observations and re-observes all conversations.
 	Reobserve bool
-	// Learn skips observe and only re-distills from existing observations.
-	Learn bool
 	// Limit caps how many conversations to process (0 means no limit).
 	Limit int
 	// Sources filters to conversations from specific sources (e.g. "kiro").
@@ -72,6 +70,13 @@ type Options struct {
 	Sources []string
 	// Verbose enables per-item progress logging.
 	Verbose bool
+}
+
+// Options configures a map-reduce distill run.
+type Options struct {
+	BaseOptions
+	// Learn skips observe and only re-distills from existing observations.
+	Learn bool
 }
 
 // Run executes the distill pipeline: observe new conversations, then learn a muse
