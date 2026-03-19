@@ -10,15 +10,14 @@ import (
 	"time"
 
 	"github.com/ellistarn/muse/internal/conversation"
-	"github.com/ellistarn/muse/internal/distill"
 	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/storage"
 )
 
 // Compile-time interface checks.
 var (
-	_ storage.Store = (*ConversationStore)(nil)
-	_ distill.LLM   = (*MockLLM)(nil)
+	_ storage.Store    = (*ConversationStore)(nil)
+	_ inference.Client = (*MockLLM)(nil)
 )
 
 // ---------------------------------------------------------------------------
@@ -222,26 +221,31 @@ type MockLLM struct {
 	Calls           []LLMCall
 }
 
-func (m *MockLLM) Converse(_ context.Context, system, user string, _ ...inference.ConverseOption) (string, inference.Usage, error) {
+func (m *MockLLM) Model() string { return "mock-model" }
+
+func (m *MockLLM) ConverseMessages(_ context.Context, system string, messages []inference.Message, _ ...inference.ConverseOption) (*inference.Response, error) {
+	user := ""
+	if len(messages) > 0 {
+		user = messages[len(messages)-1].Content
+	}
 	m.mu.Lock()
 	m.Calls = append(m.Calls, LLMCall{System: system, User: user})
 	m.mu.Unlock()
 	if m.Err != nil {
-		return "", inference.Usage{}, m.Err
+		return nil, m.Err
 	}
 	usage := inference.Usage{InputTokens: 100, OutputTokens: 50}
+	text := m.ObserveResponse
 	if strings.Contains(system, "distilling observations") {
-		return m.LearnResponse, usage, nil
+		text = m.LearnResponse
 	}
-	return m.ObserveResponse, usage, nil
+	return &inference.Response{Text: text, Usage: usage}, nil
 }
 
-func (m *MockLLM) Model() string { return "mock-model" }
-
-func (m *MockLLM) ConverseStream(ctx context.Context, system, user string, fn inference.StreamFunc, opts ...inference.ConverseOption) (string, inference.Usage, error) {
-	text, usage, err := m.Converse(ctx, system, user, opts...)
+func (m *MockLLM) ConverseMessagesStream(ctx context.Context, system string, messages []inference.Message, fn inference.StreamFunc, opts ...inference.ConverseOption) (*inference.Response, error) {
+	resp, err := m.ConverseMessages(ctx, system, messages, opts...)
 	if fn != nil && err == nil {
-		fn(inference.StreamDelta{Text: text})
+		fn(inference.StreamDelta{Text: resp.Text})
 	}
-	return text, usage, err
+	return resp, err
 }

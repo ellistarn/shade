@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
+	"github.com/ellistarn/muse/internal/inference"
 	"github.com/google/uuid"
 )
 
-// Session holds a Bedrock conversation's message history so it can be continued.
+// Session holds a conversation's message history so it can be continued.
 // The mutex serializes concurrent Ask calls that target the same session.
 type Session struct {
 	mu       sync.Mutex
 	ID       string
-	System   string          // system prompt for the conversation
-	Messages []types.Message // full conversation history
+	System   string              // system prompt for the conversation
+	Messages []inference.Message // full conversation history
 }
 
 // sessionStore is an in-memory map of active sessions.

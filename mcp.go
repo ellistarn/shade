@@ -32,7 +32,11 @@ Add this to your agent's MCP config:
 			if err != nil {
 				return err
 			}
-			m, err := muse.New(ctx, store)
+			llm, err := newLLMClient(ctx, TierCompose)
+			if err != nil {
+				return err
+			}
+			m, err := muse.New(ctx, store, llm)
 			if err != nil {
 				return err
 			}

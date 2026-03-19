@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ellistarn/muse/internal/bedrock"
 	"github.com/ellistarn/muse/internal/distill"
 	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/muse"
@@ -67,7 +66,11 @@ reprocessing conversations. Use --reobserve to reprocess conversations from scra
 			// only re-distills from existing observations)
 			var uploaded, uploadBytes int
 			if !learn {
-				m, err := muse.New(ctx, store)
+				llm, err := newLLMClient(ctx, TierCompose)
+				if err != nil {
+					return err
+				}
+				m, err := muse.New(ctx, store, llm)
 				if err != nil {
 					return err
 				}
@@ -101,20 +104,20 @@ reprocessing conversations. Use --reobserve to reprocess conversations from scra
 }
 
 func runClusteredDistill(ctx context.Context, stdout io.Writer, store storage.Store, sources []string, reobserve, relabel bool, limit, uploaded, uploadBytes int) error {
-	sonnet, err := bedrock.NewClient(ctx, bedrock.ModelSonnet)
+	observeLLM, err := newLLMClient(ctx, TierObserve)
 	if err != nil {
-		return fmt.Errorf("sonnet client: %w", err)
+		return err
 	}
-	opus, err := bedrock.NewClient(ctx, bedrock.ModelOpus)
+	composeLLM, err := newLLMClient(ctx, TierCompose)
 	if err != nil {
-		return fmt.Errorf("opus client: %w", err)
+		return err
 	}
 
 	result, err := distill.RunClustered(ctx, store,
-		sonnet, // observe
-		sonnet, // label
-		sonnet, // summarize
-		opus,   // compose — editorial judgment where Opus earns its keep
+		observeLLM, // observe
+		observeLLM, // label
+		observeLLM, // summarize
+		composeLLM, // compose
 		distill.ClusteredOptions{
 			BaseOptions: distill.BaseOptions{
 				Reobserve: reobserve,
@@ -145,28 +148,25 @@ func runMapReduceDistill(ctx context.Context, stdout io.Writer, store storage.St
 		Learn: learn,
 	}
 
+	observeLLM, err := newLLMClient(ctx, TierObserve)
+	if err != nil {
+		return err
+	}
+	composeLLM, err := newLLMClient(ctx, TierCompose)
+	if err != nil {
+		return err
+	}
+
 	if learn {
-		learnClient, err := bedrock.NewClient(ctx, bedrock.ModelOpus)
-		if err != nil {
-			return err
-		}
 		opts.Learn = true
-		result, err := distill.LearnOnly(ctx, store, learnClient)
+		result, err := distill.LearnOnly(ctx, store, composeLLM)
 		if err != nil {
 			return err
 		}
 		return printResult(stdout, result, true)
 	}
 
-	observeClient, err := bedrock.NewClient(ctx, bedrock.ModelSonnet)
-	if err != nil {
-		return err
-	}
-	learnClient, err := bedrock.NewClient(ctx, bedrock.ModelOpus)
-	if err != nil {
-		return err
-	}
-	result, err := distill.Run(ctx, store, observeClient, learnClient, opts)
+	result, err := distill.Run(ctx, store, observeLLM, composeLLM, opts)
 	if err != nil {
 		return err
 	}

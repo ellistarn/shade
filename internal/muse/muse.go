@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
-
-	"github.com/ellistarn/muse/internal/bedrock"
 	"github.com/ellistarn/muse/internal/conversation"
 	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/storage"
@@ -27,9 +24,9 @@ type UploadResult struct {
 
 // AskInput contains the parameters for an Ask call.
 type AskInput struct {
-	Question   string             // the user's message
-	SessionID  string             // if set, continues an existing conversation
-	StreamFunc bedrock.StreamFunc // if set, text deltas are streamed through this callback
+	Question   string               // the user's message
+	SessionID  string               // if set, continues an existing conversation
+	StreamFunc inference.StreamFunc // if set, text deltas are streamed through this callback
 }
 
 // AskResult contains the output from an Ask call.
@@ -42,16 +39,12 @@ type AskResult struct {
 // Muse holds the state needed for all operations.
 type Muse struct {
 	storage  storage.Store
-	bedrock  *bedrock.Client
+	llm      inference.Client
 	soul     string // the full muse.md, loaded at init
 	sessions *sessionStore
 }
 
-func New(ctx context.Context, store storage.Store) (*Muse, error) {
-	bedrockClient, err := bedrock.NewClient(ctx, bedrock.ModelOpus)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create bedrock client: %w", err)
-	}
+func New(ctx context.Context, store storage.Store, llm inference.Client) (*Muse, error) {
 	soul, err := store.GetMuse(ctx)
 	if err != nil {
 		if !storage.IsNotFound(err) {
@@ -61,16 +54,16 @@ func New(ctx context.Context, store storage.Store) (*Muse, error) {
 	}
 	return &Muse{
 		storage:  store,
-		bedrock:  bedrockClient,
+		llm:      llm,
 		soul:     soul,
 		sessions: newSessionStore(),
 	}, nil
 }
 
 // NewForTest creates a Muse with caller-provided dependencies.
-func NewForTest(bedrockClient *bedrock.Client, soul string) *Muse {
+func NewForTest(llm inference.Client, soul string) *Muse {
 	return &Muse{
-		bedrock:  bedrockClient,
+		llm:      llm,
 		soul:     soul,
 		sessions: newSessionStore(),
 	}
@@ -106,26 +99,26 @@ func (m *Muse) Ask(ctx context.Context, input AskInput) (*AskResult, error) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 
-	session.Messages = append(session.Messages, types.Message{
-		Role:    types.ConversationRoleUser,
-		Content: []types.ContentBlock{&types.ContentBlockMemberText{Value: input.Question}},
+	session.Messages = append(session.Messages, inference.Message{
+		Role:    "user",
+		Content: input.Question,
 	})
 
-	var result *bedrock.ConverseResult
+	var result *inference.Response
 	var err error
 	if input.StreamFunc != nil {
-		result, err = m.bedrock.ConverseMessagesStream(ctx, session.System, session.Messages, input.StreamFunc)
+		result, err = m.llm.ConverseMessagesStream(ctx, session.System, session.Messages, input.StreamFunc)
 	} else {
-		result, err = m.bedrock.ConverseMessages(ctx, session.System, session.Messages, nil)
+		result, err = m.llm.ConverseMessages(ctx, session.System, session.Messages)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("converse failed: %w", err)
 	}
 
 	// Append the assistant's response to the session history
-	session.Messages = append(session.Messages, types.Message{
-		Role:    types.ConversationRoleAssistant,
-		Content: result.Content,
+	session.Messages = append(session.Messages, inference.Message{
+		Role:    "assistant",
+		Content: result.Text,
 	})
 
 	sessionID := m.sessions.save(session)

@@ -520,7 +520,7 @@ func extractObservations(ctx context.Context, client LLM, conv *conversation.Con
 	// Extract candidates
 	var allCandidates []string
 	for _, chunk := range chunks {
-		obs, usage, err := client.Converse(ctx, prompts.Extract, chunk, inference.WithMaxTokens(4096))
+		obs, usage, err := inference.Converse(ctx, client, prompts.Extract, chunk, inference.WithMaxTokens(4096))
 		totalUsage = totalUsage.Add(usage)
 		if err != nil && obs == "" {
 			return nil, totalUsage, err
@@ -535,7 +535,7 @@ func extractObservations(ctx context.Context, client LLM, conv *conversation.Con
 
 	// Refine
 	candidates := strings.Join(allCandidates, "\n\n")
-	refined, usage, err := client.Converse(ctx, prompts.Refine, candidates, inference.WithMaxTokens(4096))
+	refined, usage, err := inference.Converse(ctx, client, prompts.Refine, candidates, inference.WithMaxTokens(4096))
 	totalUsage = totalUsage.Add(usage)
 	if err != nil && refined == "" {
 		return nil, totalUsage, err
@@ -1040,7 +1040,7 @@ func runLabel(
 
 				prompt := buildLabelPrompt(labels.list())
 				input := buildLabelInput(batchTexts)
-				resp, u, err := llm.Converse(errCtx, prompt, input, inference.WithMaxTokens(1024))
+				resp, u, err := inference.Converse(errCtx, llm, prompt, input, inference.WithMaxTokens(1024))
 				usage = usage.Add(u)
 				if err != nil {
 					mu.Lock()
@@ -1161,7 +1161,7 @@ func runNormalize(
 		input.WriteString("\n")
 	}
 
-	resp, usage, err := llm.Converse(ctx, prompts.Normalize, input.String(), inference.WithMaxTokens(4096))
+	resp, usage, err := inference.Converse(ctx, llm, prompts.Normalize, input.String(), inference.WithMaxTokens(4096))
 	if err != nil {
 		return usage, fmt.Errorf("normalize: %w", err)
 	}
@@ -1414,7 +1414,7 @@ func runSummarize(
 				input.WriteString(obs)
 			}
 
-			resp, usage, err := llm.Converse(ctx, prompts.Summarize, input.String(), inference.WithMaxTokens(4096))
+			resp, usage, err := inference.Converse(ctx, llm, prompts.Summarize, input.String(), inference.WithMaxTokens(4096))
 			summaries[i] = strings.TrimSpace(resp)
 			usages[i] = usage
 			if err != nil {
@@ -1469,7 +1469,7 @@ func runCompose(
 	}
 
 	stream := newStageStream(16000, 4096)
-	muse, usage, err := llm.ConverseStream(ctx, prompts.ComposeClustered, input.String(), stream.callback(), inference.WithThinking(16000))
+	muse, usage, err := inference.ConverseStream(ctx, llm, prompts.ComposeClustered, input.String(), stream.callback(), inference.WithThinking(16000))
 	stream.finish()
 	if err != nil {
 		return "", "", usage, err

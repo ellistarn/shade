@@ -16,12 +16,8 @@ import (
 	"github.com/ellistarn/muse/prompts"
 )
 
-// LLM is the subset of an LLM client used by the distill pipeline.
-type LLM interface {
-	Converse(ctx context.Context, system, user string, opts ...inference.ConverseOption) (string, inference.Usage, error)
-	ConverseStream(ctx context.Context, system, user string, fn inference.StreamFunc, opts ...inference.ConverseOption) (string, inference.Usage, error)
-	Model() string
-}
+// LLM is the inference client used by the distill pipeline.
+type LLM = inference.Client
 
 // StageStats captures telemetry for a single pipeline stage.
 type StageStats struct {
@@ -311,7 +307,7 @@ func observeConversation(ctx context.Context, client LLM, conv *conversation.Con
 	// Extract candidate observations (Pass 1)
 	var allCandidates []string
 	for _, chunk := range chunks {
-		obs, usage, err := client.Converse(ctx, prompts.Extract, chunk, inference.WithMaxTokens(4096))
+		obs, usage, err := inference.Converse(ctx, client, prompts.Extract, chunk, inference.WithMaxTokens(4096))
 		totalUsage = totalUsage.Add(usage)
 		if err != nil && obs == "" {
 			return "", totalUsage, err
@@ -326,7 +322,7 @@ func observeConversation(ctx context.Context, client LLM, conv *conversation.Con
 
 	// Refine observations (Pass 2)
 	candidates := strings.Join(allCandidates, "\n\n")
-	refined, usage, err := client.Converse(ctx, prompts.Refine, candidates, inference.WithMaxTokens(4096))
+	refined, usage, err := inference.Converse(ctx, client, prompts.Refine, candidates, inference.WithMaxTokens(4096))
 	totalUsage = totalUsage.Add(usage)
 	if err != nil {
 		return "", totalUsage, err
@@ -347,7 +343,7 @@ func learn(ctx context.Context, client LLM, store storage.Store, observations []
 		return "", "", inference.Usage{}, nil
 	}
 	input := strings.Join(observations, "\n\n---\n\n")
-	muse, usage, err := client.Converse(ctx, prompts.Compose, input, inference.WithThinking(16000))
+	muse, usage, err := inference.Converse(ctx, client, prompts.Compose, input, inference.WithThinking(16000))
 	if err != nil {
 		return "", "", usage, err
 	}
@@ -373,7 +369,7 @@ func ComputeDiff(ctx context.Context, client LLM, store storage.Store, timestamp
 		input := fmt.Sprintf("Previous muse:\n%s\n\n---\n\nNew muse:\n%s", previous, current)
 		stream := newStageStream(0, 4096) // no thinking, writing bar against 4k budget
 		var err error
-		d, usage, err = client.ConverseStream(ctx, prompts.Diff, input, stream.callback(), inference.WithMaxTokens(4096))
+		d, usage, err = inference.ConverseStream(ctx, client, prompts.Diff, input, stream.callback(), inference.WithMaxTokens(4096))
 		stream.finish()
 		if err != nil {
 			return "", usage, err

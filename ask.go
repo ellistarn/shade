@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ellistarn/muse/internal/bedrock"
 	"github.com/ellistarn/muse/internal/inference"
 	"github.com/ellistarn/muse/internal/muse"
 )
@@ -28,7 +27,11 @@ questions ("Is X a good approach for Y?") rather than factual lookups.`,
 			if err != nil {
 				return err
 			}
-			m, err := muse.New(ctx, store)
+			llm, err := newLLMClient(ctx, TierCompose)
+			if err != nil {
+				return err
+			}
+			m, err := muse.New(ctx, store, llm)
 			if err != nil {
 				return err
 			}
@@ -36,7 +39,7 @@ questions ("Is X a good approach for Y?") rather than factual lookups.`,
 			var wroteOutput bool
 			_, err = m.Ask(ctx, muse.AskInput{
 				Question: question,
-				StreamFunc: bedrock.StreamFunc(func(delta inference.StreamDelta) {
+				StreamFunc: inference.StreamFunc(func(delta inference.StreamDelta) {
 					fmt.Fprint(os.Stdout, delta.Text)
 					wroteOutput = true
 				}),
