@@ -38,6 +38,7 @@ Conversations are automatically discovered from:
 - **Claude Code** — `~/.claude/projects/`
 - **Kiro** — `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/`
 - **OpenCode** — `~/.local/share/opencode/opencode.db`
+- **Codex** — `~/.codex/`
 
 ## Storage
 

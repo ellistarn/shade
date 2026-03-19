@@ -28,14 +28,14 @@ func (m *mockProvider) Conversations() ([]Conversation, error) {
 
 func TestProviders_ReturnsAllDefaults(t *testing.T) {
 	providers := Providers()
-	if len(providers) != 4 {
-		t.Fatalf("expected 4 providers, got %d", len(providers))
+	if len(providers) != 5 {
+		t.Fatalf("expected 5 providers, got %d", len(providers))
 	}
 	names := map[string]bool{}
 	for _, p := range providers {
 		names[p.Name()] = true
 	}
-	for _, want := range []string{"OpenCode", "Claude Code", "Kiro", "Kiro CLI"} {
+	for _, want := range []string{"OpenCode", "Claude Code", "Codex", "Kiro", "Kiro CLI"} {
 		if !names[want] {
 			t.Errorf("missing provider %q", want)
 		}

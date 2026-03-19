@@ -40,13 +40,14 @@ Two distillation methods are available:
   reduces all observations into a single muse.md. Simpler, sufficient for
   smaller observation sets.
 
-Optionally pass one or more source names (kiro, kiro-cli, claude-code, opencode) to limit
+Optionally pass one or more source names (codex, kiro, kiro-cli, claude-code, opencode) to limit
 discovery and observation to those sources.
 
 Use --learn to re-distill the muse from existing observations without
 reprocessing conversations. Use --reobserve to reprocess conversations from scratch.`,
 		Example: `  muse distill                          # default: clustering
   muse distill --method=map-reduce      # simpler pipeline
+  muse distill codex                    # only Codex conversations
   muse distill kiro                     # only kiro conversations
   muse distill kiro opencode            # kiro and opencode
   muse distill kiro --reobserve         # re-observe kiro from scratch
