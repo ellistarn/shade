@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"context"
@@ -16,6 +16,11 @@ import (
 
 var bucket string
 var verbose bool
+
+// Execute runs the root command.
+func Execute() error {
+	return newRootCmd().Execute()
+}
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
