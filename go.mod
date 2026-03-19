@@ -5,7 +5,6 @@ go 1.25.5
 require (
 	github.com/anthropics/anthropic-sdk-go v1.27.1
 	github.com/aws/aws-sdk-go-v2 v1.41.3
-	github.com/openai/openai-go v1.12.0
 	github.com/aws/aws-sdk-go-v2/config v1.29.14
 	github.com/aws/aws-sdk-go-v2/service/bedrock v1.56.0
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.50.1
@@ -13,6 +12,7 @@ require (
 	github.com/aws/smithy-go v1.24.2
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.45.0
+	github.com/openai/openai-go v1.12.0
 	github.com/spf13/cobra v1.9.1
 	modernc.org/sqlite v1.37.1
 )
