@@ -135,13 +135,17 @@ func (l *LocalStore) GetMuse(_ context.Context) (string, error) {
 	return "", &NotFoundError{Key: "versions/"}
 }
 
-// PutMuse writes a muse version at the given timestamp.
+// PutMuse writes a muse version at the given timestamp and updates the stable
+// latest file at {root}/muse.md for external consumers (e.g. agent instructions).
 func (l *LocalStore) PutMuse(_ context.Context, timestamp, content string) error {
 	path := filepath.Join(l.root, "versions", timestamp, "muse.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(l.root, "muse.md"), []byte(content), 0o644)
 }
 
 // PutMuseDiff writes a diff summary at the given timestamp.

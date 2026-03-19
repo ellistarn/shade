@@ -18,7 +18,17 @@ muse listen               # start MCP server
 muse show                 # print muse.md
 ```
 
-Wire up the MCP server so agents can ask your muse questions:
+After distilling, your muse is always available at `~/.muse/muse.md`. Point your
+agent's system prompt to source it automatically:
+
+```json
+// ~/.config/opencode/opencode.json
+{
+  "instructions": ["~/.muse/muse.md"]
+}
+```
+
+Or wire up the MCP server so agents can ask your muse questions on demand:
 
 ```json
 {

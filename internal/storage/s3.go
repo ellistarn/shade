@@ -129,7 +129,8 @@ func (c *S3Store) GetMuse(ctx context.Context) (string, error) {
 	return "", &NotFoundError{Key: "versions/"}
 }
 
-// PutMuse writes a muse version at the given timestamp.
+// PutMuse writes a muse version at the given timestamp and updates the stable
+// latest key at muse.md in the bucket root for external consumers.
 func (c *S3Store) PutMuse(ctx context.Context, timestamp, content string) error {
 	key := museVersionKey(timestamp)
 	contentType := "text/markdown"
@@ -141,6 +142,16 @@ func (c *S3Store) PutMuse(ctx context.Context, timestamp, content string) error 
 	})
 	if err != nil {
 		return fmt.Errorf("failed to put muse: %w", err)
+	}
+	stableKey := "muse.md"
+	_, err = c.s3.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      &c.bucket,
+		Key:         &stableKey,
+		Body:        bytes.NewReader([]byte(content)),
+		ContentType: &contentType,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to put stable muse: %w", err)
 	}
 	return nil
 }
