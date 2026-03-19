@@ -83,7 +83,7 @@ muse distill --method=incremental
 ## Bootstrap and Updates
 
 First run: the muse is empty, so the batch can be large (~200 most recent observations). As
-the muse fills through successive updates, the batch shrinks per the sliding scale above.
+the muse fills through successive updates, the batch shrinks (see Decisions below).
 
 ## Decisions
 
